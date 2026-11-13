@@ -1,0 +1,125 @@
+[mod]
+id = "bundle_inventory"
+version = "0.1.0"
+priority = 100
+
+# The commit it was tested on: it draws into the survival inventory, routes
+# its clicks through the game's own screen events and menu engine and reads
+# the bundle contents the engine's own item data holds, so a Horizon change
+# in the game or mod-hook sources needs a re-check.
+[compatibility]
+horizon_revision = "2ebf00a0281c592f79191e76fce0e7d522c6f425"
+
+# The mod's brain: pure standard library, no game types, tested on its own.
+# The panel geometry, the click plans (with each step's cursor expectations)
+# and the deposit rules all live here; the modules below and the helpers are
+# thin adapters over them.
+[[module]]
+id = "runtime"
+file = "crates/horizon-client/src/game.rs"
+name = "bundle_inventory"
+source = "runtime.rs"
+
+# The game-side half: the reads every helper shares (the player's own slots,
+# the gates, the plan's snapshot) and the engine's own selection and click
+# calls the tick's executor turns a plan into.
+[[module]]
+id = "hooks"
+file = "crates/horizon-client/src/game.rs"
+name = "bundle_inventory_hooks"
+source = "hooks.rs"
+
+# A press on any open screen, before the screen acts on it: the panel's whole
+# routing — shift + right-click on a bundle opens it, an entry click takes it
+# or (shift) moves it into the inventory, a click on another player slot puts
+# that stack in, a click anywhere else closes the panel and keeps the vanilla
+# click-outside from dropping what the cursor carries.
+[[injection]]
+id = "click"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::native_hooks::Game<'_>::native_screen_mouse_button_pressed_pre"
+helper = "click.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "screen", ty = "&horizon_client::mod_api::NativeScreenView<'_>", value = "screen" },
+  { name = "button", ty = "i32", value = "button" },
+  { name = "modifiers", ty = "u32", value = "modifiers" },
+]
+
+# The panel drawn whole once a frame, after the screen and its tooltips: the
+# box, one real slot per entry with the game's own item rendering, the hover
+# highlight and name, and the weight bar in the bundle's own colors. Read-only.
+[[injection]]
+id = "draw"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_screen_render_post"
+helper = "draw.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "batch" },
+  { name = "screen", ty = "&horizon_client::mod_api::NativeScreenView<'_>", value = "screen" },
+]
+
+# A key after rebinding: while the panel is open, Escape closes the panel
+# instead of the inventory and Q over an entry drops it into the world, as a
+# deferred plan of ordinary menu clicks.
+[[injection]]
+id = "key"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::Game<'_>::mapped_key"
+helper = "key.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "key", ty = "winit::keyboard::KeyCode", value = "key" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+  { name = "repeat", ty = "bool", value = "repeat" },
+]
+
+# Every tick: the panel closes itself when the world disagrees with it, and
+# the deferred plan runs step by step as the engine's own menu clicks, each
+# step's cursor expectation checked against the live game first.
+[[injection]]
+id = "tick"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_tick"
+helper = "tick.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+# The row in Options > Mods: the mod and what it does.
+[[injection]]
+id = "list"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_mods"
+helper = "list.rs"
+bindings = [
+  { name = "mods", ty = "&mut Vec<crate::game::native_hooks::NativeMod>", value = "&mut *mods" },
+]
+
+# The settings page: the Enabled toggle.
+[[injection]]
+id = "settings"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_settings"
+helper = "settings.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+  { name = "buttons", ty = "&mut Vec<String>", value = "&mut *buttons" },
+]
+
+# A click on the settings page, stored straight into the setting file the
+# gates re-read.
+[[injection]]
+id = "settings-click"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_settings_click"
+helper = "setting_click.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+  { name = "button", ty = "usize", value = "button" },
+]

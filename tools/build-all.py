@@ -66,6 +66,7 @@ BUNDLES = [
     ("barrel_roll", HOME / "Projects/barrel_roll/target/barrel_roll-0.1.0.hnmod", None),
     ("elytra_slot", HOME / "Projects/elytra_slot/target/elytra_slot-0.1.0.hnmod", None),
     ("hey_wiki", HOME / "Projects/hey_wiki/target/hey_wiki-0.1.0.hnmod", None),
+    ("bundle_inventory", HOME / "Projects/bundle_inventory/target/bundle_inventory-0.1.0.hnmod", None),
 ]
 
 # Nothing is excluded now: worldedit's manifest is migrated below. The helpers
