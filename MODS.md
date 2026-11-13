@@ -17,8 +17,8 @@ what it adds to the game. In-game verification status noted per mod.
 | **fly 0.1.0** | Survival flight on a keybind: toggles `may_fly`/`flying`; the engine tells the server on its own. Pairs with soft_landing for the drop. | **R** toggles (rebindable) | chain green; in-game toggle pass pending |
 | **pingfix 0.1.0** | Tab-player-list latency bars. | always on | in-game ✓ (Tab bars) |
 | **baritone_helper 0.1.0** | Chat helper for the bundled Baritone: `!status`, `!q` stacked queue, dispatch by describe+pathing_busy. Needs Baritone 1.1.52. | chat commands | in-game ✓ (queue walks both legs) |
-| **trajectory_preview 0.1.0** | Draws the flight of the projectile in hand (bow draw curve, crossbow, trident, throwables, potion lob) with the game's own physics; white line, red impact box, depth-tested. | always on | chain pending (`~/Projects/trajectory_preview/tools/ingame-test.txt`) |
-| **barrel_roll 0.1.0** | Elytra flight camera unlock: mouse X rolls, A/D steers, the camera banks into turns; physics untouched. | Options > Mods toggle | chain pending (`~/Projects/barrel_roll/tools/ingame-test.txt`) |
+| **trajectory_preview 0.1.0** | Draws the flight of the projectile in hand (bow draw curve, crossbow, trident, throwables, potion lob) with the game's own physics; white line, red impact box, depth-tested. | always on | staged check + staged tests 5/5 (`~/Projects/trajectory_preview/tools/ingame-test.txt`) |
+| **barrel_roll 0.1.0** | Elytra flight camera unlock: mouse X rolls, A/D steers, the camera banks into turns; physics untouched. | Options > Mods toggle | staged check + staged tests 7/7 (`~/Projects/barrel_roll/tools/ingame-test.txt`) |
 | **no_chat_reports 0.1.0** | Unsigned, unreportable chat (Disable Signing + hub relay strip); trust-badge gates; NCR + No-Chat-Restrictions combined. | Options > Mods rows | staged tests 5/5 |
 | **worldedit 1.2.1** | The store bundle, chat-crate-migrated to the current pin (a dedicated re-target is in flight; this build ships the migrated manifest). | chat commands | disabled upstream; migration pending |
 
@@ -34,7 +34,7 @@ baritone_helper is verified against 1.1.52).
 ## Build
 
 ```
-python3 -I tools/build-all.py --profile release   # 23 bundles, 129 modules, 164 injections
+python3 -I tools/build-all.py --profile release   # 25 bundles, 134 modules, 172 injections
 ```
 
 The glibc ≤ 2.43 deliverable builds inside docker `debian:trixie` (recipe in
