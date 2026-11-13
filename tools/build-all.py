@@ -64,6 +64,7 @@ BUNDLES = [
     ("no_chat_reports", HOME / "Projects/no_chat_reports/target/no_chat_reports-0.1.0.hnmod", None),
     ("trajectory_preview", HOME / "Projects/trajectory_preview/target/trajectory_preview-0.1.0.hnmod", None),
     ("barrel_roll", HOME / "Projects/barrel_roll/target/barrel_roll-0.1.0.hnmod", None),
+    ("elytra_slot", HOME / "Projects/elytra_slot/target/elytra_slot-0.1.0.hnmod", None),
 ]
 
 # Nothing is excluded now: worldedit's manifest is migrated below. The helpers
