@@ -1,0 +1,177 @@
+[mod]
+id = "hey_wiki"
+version = "0.1.0"
+priority = 100
+
+# The commit it was tested on: it reads the game's crosshair picks, draws
+# its own screen over the world and answers its keys, characters, clicks
+# and wheel, fetches the wiki with the engine's own HTTP client and opens
+# the game's link confirmation, so a Horizon change in the game or mod-hook
+# sources needs a re-check.
+[compatibility]
+horizon_revision = "2ebf00a0281c592f79191e76fce0e7d522c6f425"
+
+# The mod's brain: pure standard library, no game types, tested on its own.
+# The page names, the API URLs, the answers' parsing, the wrapping, the
+# target choice, the routing, the search box and the page view all live
+# here; the module below and the helpers are thin adapters over them.
+[[module]]
+id = "runtime"
+file = "crates/horizon-client/src/game.rs"
+name = "hey_wiki"
+source = "runtime.rs"
+
+# The game-side half: the crosshair lookup, the browser opening and the
+# workers' HTTP (the engine's own `ureq`, on the fetch's thread).
+[[module]]
+id = "hooks"
+file = "crates/horizon-client/src/game.rs"
+name = "hey_wiki_hooks"
+source = "hooks.rs"
+
+# Wherever a key goes down or up: H looks up what the crosshair is on (the
+# hovered slot's item while a screen is open), Alt+H the main hand's item,
+# B opens the wiki screen.
+[[injection]]
+id = "key"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_key"
+helper = "key.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "key", ty = "&str", value = "key" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
+
+# The wiki screen drawn whole once a frame (its id is `mod` and this mod
+# owns it): the workers' answers apply, then the box, the results, the wait
+# or the page with its buttons.
+[[injection]]
+id = "screen"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_screen_render_post"
+helper = "screen.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "batch" },
+  { name = "screen", ty = "&horizon_client::mod_api::NativeScreenView<'_>", value = "screen" },
+]
+
+# A key on the wiki screen, before the screen acts: the mode's answer, a
+# submit fetching natively or opening the browser, Escape going on.
+[[injection]]
+id = "screen-key"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::native_hooks::Game<'_>::native_screen_key_pressed_pre"
+helper = "screen_key.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "screen", ty = "&horizon_client::mod_api::NativeScreenView<'_>", value = "screen" },
+  { name = "key", ty = "&str", value = "key" },
+  { name = "repeat", ty = "bool", value = "repeat" },
+  { name = "modifiers", ty = "u32", value = "modifiers" },
+]
+
+# A typed character on the wiki screen: the search box takes it, the rest
+# of the screen drops it, nothing types through into the game.
+[[injection]]
+id = "screen-char"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::native_hooks::Game<'_>::native_screen_char_typed_pre"
+helper = "screen_char.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "screen", ty = "&horizon_client::mod_api::NativeScreenView<'_>", value = "screen" },
+  { name = "c", ty = "char", value = "c" },
+  { name = "modifiers", ty = "u32", value = "modifiers" },
+]
+
+# A press on the wiki screen: the page's buttons (browser fallback, link
+# copy, back) and a result's row, per the brain's click plan.
+[[injection]]
+id = "screen-click"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::native_hooks::Game<'_>::native_screen_mouse_button_pressed_pre"
+helper = "click.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "screen", ty = "&horizon_client::mod_api::NativeScreenView<'_>", value = "screen" },
+  { name = "button", ty = "i32", value = "button" },
+  { name = "modifiers", ty = "u32", value = "modifiers" },
+]
+
+# The wheel over the wiki screen: the page's text scrolls three lines a
+# notch, clamped to the text.
+[[injection]]
+id = "screen-scroll"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::native_hooks::Game<'_>::native_screen_mouse_scrolled_pre"
+helper = "scroll.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "screen", ty = "&horizon_client::mod_api::NativeScreenView<'_>", value = "screen" },
+  { name = "scroll", ty = "[f64; 2]", value = "scroll" },
+  { name = "modifiers", ty = "u32", value = "modifiers" },
+]
+
+# A mod's own screen closing: the view and the deferred browser are
+# forgotten.
+[[injection]]
+id = "closed"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_screen_closing"
+helper = "close.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "screen", ty = "&horizon_client::mod_api::NativeScreenView<'_>", value = "screen" },
+]
+
+# Every tick: a deferred browser opening (the native view off, or the page
+# view's button) goes to the game's link prompt or the browser.
+[[injection]]
+id = "tick"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_tick"
+helper = "tick.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+# The row in Options > Mods: the mod, what it does and its two keybind slots.
+[[injection]]
+id = "list"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_mods"
+helper = "list.rs"
+bindings = [
+  { name = "mods", ty = "&mut Vec<crate::game::native_hooks::NativeMod>", value = "&mut *mods" },
+]
+
+# The settings page: Enabled, Wiki in game, Confirm before opening, Reach.
+[[injection]]
+id = "settings"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_settings"
+helper = "settings.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+  { name = "buttons", ty = "&mut Vec<String>", value = "&mut *buttons" },
+]
+
+# A click on the settings page, written straight into the setting file the
+# gates re-read.
+[[injection]]
+id = "settings-click"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_settings_click"
+helper = "setting_click.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+  { name = "button", ty = "usize", value = "button" },
+]
