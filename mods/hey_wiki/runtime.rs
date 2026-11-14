@@ -27,8 +27,9 @@ pub const VERSION: &str = "0.2.0";
 pub const DESCRIPTION: &str = "The Minecraft Wiki, a keypress away: press H to open the \
 page of the block, mob or item your crosshair is on (the hovered slot's item \
 while a screen is open), Alt+H for the item in your hand, and B for an \
-in-game wiki search. Pages render like the wiki's own article — sections, \
-headers and rules on a paper panel; a browser is the fallback.";
+in-game wiki search. Pages render in the game's own viewer — a dark panel, \
+the wiki's sections and headers, the full text to scroll; a browser is the \
+fallback.";
 
 /// The wiki the mod opens: the official English Minecraft Wiki, a MediaWiki
 /// site with the TextExtracts extension the page fetch reads.
@@ -77,6 +78,36 @@ pub const BODY_LINES: usize = 15;
 /// The page view's buttons, bottom right of the panel: a piece's size.
 pub const BUTTON_W: f32 = 110.0;
 pub const BUTTON_H: f32 = 18.0;
+/// The panel's padding: how far the frame's content — the title row, the
+/// search field, the page's body, the footer hints — sits from the panel's
+/// edges. The results' rows and the buttons keep their own, pinned geometry
+/// (the click plan answers those exact rects).
+pub const PANEL_PAD: f32 = 14.0;
+
+/// The viewer's palette, the Ore-UI look: one dark surface, one accent,
+/// hairline separators, two text tones. Flat fills only — no gradients,
+/// no borders but the hairlines. The fills read `argb` (alpha first); the
+/// text helper takes the same shape and reads only its lower three bytes.
+pub const SURFACE: u32 = 0xF00E1116;
+/// The world behind the panel, dimmed the way a screen does.
+pub const SURFACE_DIM: u32 = 0x90000000;
+/// A step lighter than the surface: the search field, the buttons, the
+/// scrollbar's track.
+pub const SURFACE_SUNK: u32 = 0xFF161C22;
+/// The 1 px separators: under the title row, under the section headers,
+/// around the buttons.
+pub const HAIRLINE: u32 = 0xFF27303A;
+/// The one accent: the page's title and section headers, the field's
+/// underline, the results' selection, the scrollbar's thumb.
+pub const ACCENT: u32 = 0xFF35A7CC;
+/// The accent, washed flat over a row for the results' selection.
+pub const ACCENT_WASH: u32 = 0x2E35A7CC;
+/// The text the user reads: body, labels, the search query.
+pub const TEXT: u32 = 0xFFE7EBEE;
+/// The text that waits: hints, the placeholder, unselected results.
+pub const TEXT_DIM: u32 = 0xFF8E979F;
+/// A failed fetch's title, where the accent would sit.
+pub const FAILURE: u32 = 0xFFE0655A;
 
 /// Whether the mod is on. A missing file means ON — the mod exists for the
 /// keys, so installing it is asking for it; anything but `false` in the file
@@ -1004,6 +1035,26 @@ pub fn open_plan(confirm: bool) -> OpenPlan {
     }
 }
 
+// ===== The pointer, playing =====
+
+/// Whether a playing window takes its free pointer back: the world is live
+/// (`playing`), the window has focus, the view owns keyboard and mouse, the
+/// pointer is free, and nothing sits over gameplay (`over_gameplay` — a
+/// prompt, a dialog, a book, anything the cursor answers). The engine
+/// re-grabs on a screen close and on a refocus that lost a held pointer,
+/// but a browser round-trip hands the focus over while the pointer is
+/// already free (the link prompt answers with the cursor), so nothing
+/// re-grabs on the way back; the tick re-asserts what playing means.
+pub fn should_regrab(
+    playing: bool,
+    focused: bool,
+    keyboard_mouse: bool,
+    captured: bool,
+    over_gameplay: bool,
+) -> bool {
+    playing && focused && keyboard_mouse && !captured && !over_gameplay
+}
+
 // ===== The clicks =====
 
 /// A click's plan on the wiki screen, from where it landed: the page's
@@ -1249,7 +1300,7 @@ pub fn reset_screen() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::{heading_of, wrap_page, LineKind, PageLine};
+    use super::{LineKind, PageLine, heading_of, wrap_page};
 
     const OFF: Option<String> = None;
     fn setting(value: &str) -> impl Fn(&str) -> Option<String> + '_ {
@@ -1285,12 +1336,18 @@ mod tests {
         assert_eq!(page[1].text, "First");
         assert_eq!(page[3].text, "Sub");
         // A header longer than the line wraps as a header, never body.
-        let long = wrap_page("== A Very Long Section Title That Wraps Around Well ==\n", 20);
+        let long = wrap_page(
+            "== A Very Long Section Title That Wraps Around Well ==\n",
+            20,
+        );
         assert!(long.iter().all(|l| l.kind == LineKind::Heading));
         assert!(long.len() > 1);
         let empty = wrap_page("\n\n\n", 62);
         assert!(empty.is_empty());
-        let _ = PageLine { text: String::new(), kind: LineKind::Body };
+        let _ = PageLine {
+            text: String::new(),
+            kind: LineKind::Body,
+        };
     }
 
     #[test]
@@ -1669,6 +1726,19 @@ mod tests {
     fn the_confirmation_gates_the_browser() {
         assert_eq!(open_plan(true), OpenPlan::Prompt);
         assert_eq!(open_plan(false), OpenPlan::Direct);
+    }
+
+    #[test]
+    fn the_free_pointer_of_a_playing_window_is_taken_back() {
+        assert!(should_regrab(true, true, true, false, false));
+        // A held pointer, an unfocused window, a view that does not own the
+        // keyboard, anything over gameplay and anything but playing each
+        // keep the tick's hands off.
+        assert!(!should_regrab(true, true, true, true, false));
+        assert!(!should_regrab(true, false, true, false, false));
+        assert!(!should_regrab(true, true, false, false, false));
+        assert!(!should_regrab(true, true, true, false, true));
+        assert!(!should_regrab(false, true, true, false, false));
     }
 
     #[test]

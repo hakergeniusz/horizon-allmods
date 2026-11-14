@@ -1,8 +1,12 @@
-// The wiki screen, drawn whole once a frame over the world: the backdrop,
-// a centered panel, and whatever the view holds — the search box with its
-// caret, the results a search found, the wait on a worker, or the page's
-// wrapped text with its scrollbar and the browser's three buttons. Any
-// worker's answer that landed since the last frame applies first.
+// The wiki screen, drawn whole once a frame over the world: the dim over
+// the world, one flat dark panel with a large title row over a hairline,
+// and whatever the view holds — the search field with its caret, the
+// results a search found, the wait on a worker, or the page's wrapped text
+// with its scrollbar and the browser's three buttons. The look is the
+// engine's own flat fills only: one dark surface, one accent, hairline
+// separators, no gradients, no borders but the hairlines. The results' rows
+// and the buttons keep the geometry the click plan answers. Any worker's
+// answer that landed since the last frame applies first.
 // Copyright (c) 2026 hakergeniusz. MIT.
 fn hey_wiki_screen(
     game: &crate::game::Game<'_>,
@@ -28,37 +32,53 @@ fn hey_wiki_screen(
         wiki::PANEL_H,
     ];
     let [px, py, pw, ph] = panel;
-    // The backdrop dims the world the way a screen does; the panel is the
-    // standard box over it, its border four thin fills.
-    game.native_fill(batch, [0.0, 0.0, w, h], 0x90000000);
-    game.native_fill(batch, panel, 0xF0101010);
-    let border = 0xFF3C3C3C;
-    let t = 1.0;
-    game.native_fill(batch, [px, py, pw, t], border);
-    game.native_fill(batch, [px, py + ph - t, pw, t], border);
-    game.native_fill(batch, [px, py, t, ph], border);
-    game.native_fill(batch, [px + pw - t, py, t, ph], border);
     let mode = wiki::with_viewer(|viewer| viewer.mode.clone());
+    // The title row: the page's own title on the page, the wiki's name
+    // elsewhere — left at the padding, over the hairline that spans the
+    // padded width. A failed fetch names itself in red, where the accent
+    // would sit.
+    let (title, title_rgb) = match &mode {
+        wiki::Mode::Page { title, failed, .. } => (
+            title.clone(),
+            if *failed {
+                wiki::FAILURE
+            } else {
+                wiki::ACCENT
+            },
+        ),
+        _ => ("Minecraft Wiki".to_string(), wiki::TEXT),
+    };
+    game.native_text(batch, &title, [px + wiki::PANEL_PAD, py + 10.0], title_rgb, false);
+    game.native_fill(
+        batch,
+        [
+            px + wiki::PANEL_PAD,
+            py + 24.0,
+            pw - wiki::PANEL_PAD * 2.0,
+            1.0,
+        ],
+        wiki::HAIRLINE,
+    );
     match mode {
-        // The search box: the wiki's name, the query with its caret (an
-        // underscore dropped into the text where the caret sits), the hint.
+        // The search field: a flat inset with the accent's own hairline for
+        // its bottom edge (the focused cue), the query with its caret (an
+        // underscore dropped into the text where the caret sits) or the
+        // placeholder.
         wiki::Mode::Search { query } => {
-            game.native_text(
-                batch,
-                "Search the Minecraft Wiki",
-                [px + 10.0, py + 9.0],
-                0xFFFFFF,
-                false,
+            let (fx, fy, fw, fh) = (
+                px + wiki::PANEL_PAD,
+                py + 32.0,
+                pw - wiki::PANEL_PAD * 2.0,
+                26.0,
             );
-            let (fx, fy, fw, fh) = (px + 8.0, py + 28.0, pw - 16.0, 22.0);
-            game.native_fill(batch, [fx, fy, fw, fh], 0xF0000000);
-            game.native_fill(batch, [fx + 3.0, fy + 1.0, fw - 6.0, fh - 2.0], 0xFF2A2A2A);
+            game.native_fill(batch, [fx, fy, fw, fh], wiki::SURFACE_SUNK);
+            game.native_fill(batch, [fx, fy + fh - 1.0, fw, 1.0], wiki::ACCENT);
             if query.value.is_empty() {
                 game.native_text(
                     batch,
                     "What are you looking for?",
-                    [fx + 5.0, fy + 7.0],
-                    0x808080,
+                    [fx + 8.0, fy + 9.0],
+                    wiki::TEXT_DIM,
                     false,
                 );
             } else {
@@ -68,44 +88,36 @@ fn hey_wiki_screen(
                 let head: String = query.value.chars().take(query.cursor).collect();
                 let tail: String = query.value.chars().skip(query.cursor).collect();
                 let shown = head + "_" + &tail;
-                game.native_text(batch, &shown, [fx + 5.0, fy + 7.0], 0xFFFFFF, true);
+                game.native_text(batch, &shown, [fx + 8.0, fy + 9.0], wiki::TEXT, true);
             }
             game.native_text(
                 batch,
                 "Enter: search the wiki   Esc: close",
-                [px + 10.0, py + ph - 18.0],
-                0xA0A0A0,
+                [px + wiki::PANEL_PAD, py + ph - 18.0],
+                wiki::TEXT_DIM,
                 false,
             );
         }
-        // The wait: what the worker is after, over the box it came from.
+        // The wait: what the worker is after, at the content's top.
         wiki::Mode::Loading { note } => {
             game.native_text(
                 batch,
-                "The Minecraft Wiki",
-                [px + 10.0, py + 9.0],
-                0xFFFFFF,
-                false,
+                &note,
+                [px + wiki::PANEL_PAD, py + 36.0],
+                wiki::TEXT,
+                true,
             );
-            game.native_text(batch, &note, [px + 10.0, py + 40.0], 0xFFFFFF, true);
             game.native_text(
                 batch,
                 "Esc: close",
-                [px + 10.0, py + ph - 18.0],
-                0xA0A0A0,
+                [px + wiki::PANEL_PAD, py + ph - 18.0],
+                wiki::TEXT_DIM,
                 false,
             );
         }
         // The results: the ranked titles the wiki found, the selection
-        // highlighted, kept three rows from the window's top edge.
+        // washed in the accent, kept three rows from the window's top edge.
         wiki::Mode::Results { titles, selected } => {
-            game.native_text(
-                batch,
-                &format!("{} results — Enter opens, Esc goes back", titles.len()),
-                [px + 10.0, py + 9.0],
-                0xFFFFFF,
-                false,
-            );
             let shown = ((ph - 64.0) / 12.0).floor().max(1.0) as usize;
             let start = selected
                 .saturating_sub(3)
@@ -113,97 +125,111 @@ fn hey_wiki_screen(
             for (row, index) in (start..titles.len().min(start + shown)).enumerate() {
                 let y = py + 34.0 + row as f32 * 12.0;
                 if index == selected {
-                    game.native_fill(batch, [px + 6.0, y - 2.0, pw - 12.0, 12.0], 0x40FFFFFF);
+                    game.native_fill(
+                        batch,
+                        [px + 8.0, y - 2.0, pw - 16.0, 12.0],
+                        wiki::ACCENT_WASH,
+                    );
                 }
                 game.native_text(
                     batch,
                     &titles[index],
-                    [px + 10.0, y],
-                    if index == selected { 0xFFFFFF } else { 0xC0C0C0 },
+                    [px + wiki::PANEL_PAD, y],
+                    if index == selected {
+                        wiki::ACCENT
+                    } else {
+                        wiki::TEXT_DIM
+                    },
                     index == selected,
                 );
             }
             game.native_text(
                 batch,
-                "Up/Down: pick   Enter: open   Esc: back",
-                [px + 10.0, py + ph - 18.0],
-                0xA0A0A0,
+                &format!(
+                    "{} results — Up/Down: pick   Enter: open   Esc: back",
+                    titles.len()
+                ),
+                [px + wiki::PANEL_PAD, py + ph - 18.0],
+                wiki::TEXT_DIM,
                 false,
             );
         }
-        // The page: the wiki's own article look — a paper panel under the
-        // title, black text on it, the section headers with the wiki's rule
-        // under them, the subheaders indented — with the scrollbar and the
-        // browser's three buttons below, with the rects the click helper
-        // answers.
+        // The page: light text on the dark surface — the section headers in
+        // the accent with a hairline rule under them, the subheaders a step
+        // in, the body plain — with the scrollbar at the body's right and
+        // the browser's three buttons below, with the rects the click
+        // helper answers. (No footer hint here: the button row owns the
+        // bottom edge.)
         wiki::Mode::Page {
-            title,
             lines,
             scroll,
-            failed,
             ..
         } => {
-            game.native_text(
-                batch,
-                &title,
-                [px + 10.0, py + 9.0],
-                if failed { 0xFF5555 } else { 0xFFFF55 },
-                false,
-            );
-            // The paper: the article's own surface, the way the wiki draws
-            // it (its white, its hairline top border).
-            let paper = [px + 6.0, py + 24.0, pw - 12.0, ph - 64.0];
-            let [qx, qy, qw, qh] = paper;
-            game.native_fill(batch, paper, 0xFFF8F9FA);
-            game.native_fill(batch, [qx, qy, qw, 1.0], 0xFFA2A9B1);
-            let show = ((qh - 8.0) / wiki::LINE_HEIGHT).floor().max(1.0) as usize;
+            let body = [
+                px + wiki::PANEL_PAD,
+                py + 32.0,
+                pw - wiki::PANEL_PAD * 2.0,
+                ph - 64.0,
+            ];
+            let [bx, by, bw, bh] = body;
+            let show = ((bh - 8.0) / wiki::LINE_HEIGHT).floor().max(1.0) as usize;
             let view = show.max(wiki::BODY_LINES);
             for (row, line) in lines.iter().skip(scroll).take(view).enumerate() {
-                let y = qy + 4.0 + row as f32 * wiki::LINE_HEIGHT;
+                let y = by + 4.0 + row as f32 * wiki::LINE_HEIGHT;
                 match line.kind {
                     wiki::LineKind::Heading => {
-                        game.native_text(batch, &line.text, [qx + 8.0, y], 0xFF202122, true);
-                        game.native_fill(batch, [qx + 8.0, y + 9.0, qw - 16.0, 1.0], 0xFFA2A9B1);
+                        game.native_text(batch, &line.text, [bx + 8.0, y], wiki::ACCENT, true);
+                        game.native_fill(
+                            batch,
+                            [bx + 8.0, y + 9.0, bw - 16.0, 1.0],
+                            wiki::HAIRLINE,
+                        );
                     }
                     wiki::LineKind::Subheading => {
-                        game.native_text(batch, &line.text, [qx + 12.0, y], 0xFF202122, true);
+                        game.native_text(batch, &line.text, [bx + 16.0, y], wiki::TEXT, true);
                     }
                     wiki::LineKind::Body => {
-                        game.native_text(batch, &line.text, [qx + 8.0, y], 0xFF202122, false);
+                        game.native_text(batch, &line.text, [bx + 8.0, y], wiki::TEXT, false);
                     }
                 }
             }
-            // The scrollbar: a thin bar down the paper's right, its thumb
-            // where the scroll is, when the text runs past the view.
+            // The scrollbar: a thin track down the body's right, its thumb
+            // in the accent where the scroll is, when the text runs past
+            // the view.
             let max = wiki::max_scroll(lines.len(), wiki::BODY_LINES);
             if max > 0 {
-                let bar_h = qh - 8.0;
+                let bar_h = bh - 8.0;
                 let thumb = (bar_h / max as f32).max(8.0).min(bar_h);
                 let at = (bar_h - thumb) * scroll as f32 / max as f32;
-                game.native_fill(batch, [qx + qw - 6.0, qy + 4.0, 3.0, bar_h], 0x30202122);
                 game.native_fill(
                     batch,
-                    [qx + qw - 6.0, qy + 4.0 + at, 3.0, thumb],
-                    0xA0202122,
+                    [bx + bw - 5.0, by + 4.0, 3.0, bar_h],
+                    wiki::SURFACE_SUNK,
+                );
+                game.native_fill(
+                    batch,
+                    [bx + bw - 5.0, by + 4.0 + at, 3.0, thumb],
+                    wiki::ACCENT,
                 );
             }
+            // The buttons: a flat inset each, a hairline around it (inside
+            // the rect, so the click plan's bounds stay exact), the label
+            // at the padding.
             for (plan, rect) in wiki::button_rects(panel) {
-                game.native_fill(batch, rect, 0xFF3366CC);
+                let [bx, by, bw, bh] = rect;
+                game.native_fill(batch, rect, wiki::SURFACE_SUNK);
+                game.native_fill(batch, [bx, by, bw, 1.0], wiki::HAIRLINE);
+                game.native_fill(batch, [bx, by + bh - 1.0, bw, 1.0], wiki::HAIRLINE);
+                game.native_fill(batch, [bx, by, 1.0, bh], wiki::HAIRLINE);
+                game.native_fill(batch, [bx + bw - 1.0, by, 1.0, bh], wiki::HAIRLINE);
                 game.native_text(
                     batch,
                     wiki::button_label(plan),
-                    [rect[0] + 6.0, rect[1] + 5.0],
-                    0xFFFFFF,
+                    [bx + 8.0, by + 6.0],
+                    wiki::TEXT,
                     false,
                 );
             }
-            game.native_text(
-                batch,
-                "Wheel/Up/Down: scroll   Esc: back",
-                [px + 10.0, py + ph - 18.0],
-                0xA0A0A0,
-                false,
-            );
         }
     }
 }

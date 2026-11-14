@@ -13,15 +13,14 @@ pub const MARK_COLOR: u32 = 0xFFFF_3F3F;
 /// The impact marker's half-size, in blocks.
 pub const MARK_SIZE: f64 = 0.15;
 /// The ground track's gray — the flight's shadow on the terrain below it.
-/// Aiming dead-ahead, the arc itself sits exactly on the view axis and
-/// projects to a line under the crosshair; the ground track is what makes
-/// the path readable then.
-pub const GROUND_COLOR: u32 = 0xFF9A_9A9A;
+pub const GROUND_COLOR: u32 = 0xFF6E_6E6E;
 /// The arc draws every other step: a dashed line reads as the flight it is.
 pub const DASH: usize = 2;
 
 /// One simulated flight: a position per step, where it lands, and the
-/// flight's shadow on the terrain (one point per few steps).
+/// flight's shadow on the terrain (one point per few steps). The drop's
+/// side view lives in the HUD panel (the runtime's projection); the
+/// world-space lines are the depth-anchored view.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Preview {
     pub points: Vec<[f64; 3]>,
@@ -119,4 +118,25 @@ pub fn build_lines(preview: &Preview) -> Vec<Line> {
         lines.extend(mark(at));
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_lines_are_arc_ground_and_marker() {
+        let preview = Preview {
+            points: vec![[0.0, 64.0, 0.0], [0.0, 64.0, 1.0], [0.0, 63.5, 2.0]],
+            ground: vec![[0.0, 60.0, 0.5], [0.0, 60.0, 1.5]],
+            impact: Some([0.0, 63.0, 3.0]),
+        };
+        let lines = build_lines(&preview);
+        // One dashed arc segment (the second window skips on the dash), one
+        // ground segment, and the impact marker's twelve edges.
+        assert_eq!(lines.len(), 1 + 1 + 12);
+        assert_eq!(lines[0].color, LINE_COLOR);
+        assert_eq!(lines[1].color, GROUND_COLOR);
+        assert_eq!(lines[2].color, MARK_COLOR);
+    }
 }

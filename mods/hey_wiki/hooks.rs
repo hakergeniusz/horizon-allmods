@@ -91,7 +91,19 @@ pub fn open_url(game: &mut crate::game::Game<'_>, url: String) {
     use crate::game::hey_wiki as wiki;
     let confirm = wiki::confirm_open(|k| game.native_setting(wiki::ID, k));
     match wiki::open_plan(confirm) {
-        wiki::OpenPlan::Prompt => game.link_prompt = Some(url),
+        wiki::OpenPlan::Prompt => {
+            // The prompt is answered with the cursor, as vanilla's always
+            // is — it only ever opens over free-cursor screens (the chat,
+            // the links screen). The H press finds the pointer held; let it
+            // go first, or the dialog's buttons stay out of reach while the
+            // view turns under the mouse. The tick re-grabs once the
+            // prompt is answered no, the engine's own refocus re-grab after
+            // the browser round-trip on yes.
+            if game.captured {
+                game.capture(false);
+            }
+            game.link_prompt = Some(url);
+        }
         wiki::OpenPlan::Direct => crate::game::packs::open_uri(&url),
     }
 }

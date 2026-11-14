@@ -5,6 +5,13 @@
 // server the slot stays read-only. An elytra on the cursor stores, and the
 // bay's own stack (if any) comes to the cursor, so no item is ever lost.
 // The vanilla click is skipped whenever the click lands on the slot.
+//
+// 0.3.0: the save comes FIRST and is verified — 0.2.0 moved the item and
+// then trusted `native_set_setting`, which in the live game silently wrote
+// nothing, so the stored elytra died with the process. Now the file is
+// written atomically and read back, and the game's stacks only move when the
+// disk provably holds the new bay; a failed save leaves the cursor's item
+// where it is and shows why on the settings page.
 // Copyright (c) 2026 hakergeniusz. MIT.
 fn elytra_slot_click(
     game: &mut crate::game::Game<'_>,
@@ -46,6 +53,11 @@ fn elytra_slot_click(
     if !elytra::over_slot(game.cursor, origin) {
         return core::ops::ControlFlow::Continue(());
     }
+    // Nowhere to persist: the click answers as an empty patch of panel
+    // rather than moving an item it could not save.
+    let Ok(dir) = crate::game::Game::native_config_dir() else {
+        return core::ops::ControlFlow::Break(());
+    };
 
     // The click is the slot's from here on: nothing vanilla runs after us.
     let cursor_item = game.carried.as_ref().map(|s| s.item.to_string());
@@ -57,26 +69,29 @@ fn elytra_slot_click(
     };
     match action {
         elytra::Action::Store => {
-            let incoming = game
-                .carried
-                .take()
-                .map(|stack| bay::into_text(&stack))
-                .expect("the action asked for the cursor's elytra");
+            let Some(cursor_stack) = game.carried.as_ref() else {
+                return core::ops::ControlFlow::Break(());
+            };
+            let incoming = bay::into_text(cursor_stack);
             // The bay's old stack (if any) takes the cursor's place: a swap,
-            // never a loss.
-            game.carried = held.as_ref().map(|old| bay::from_text(old));
-            elytra::set(Some(incoming.clone()));
-            for (key, value) in elytra::texts(Some(&incoming)) {
-                game.native_set_setting(elytra::ID, key, &value);
+            // never a loss — but only once the file provably holds the bay.
+            if elytra::save_bay(&dir, Some(&incoming)).is_err() {
+                return core::ops::ControlFlow::Break(());
             }
+            game.carried = held.as_ref().map(|old| bay::from_text(old));
+            elytra::set(Some(incoming));
         }
         elytra::Action::Take => {
-            let old = held.expect("the action asked for the bay's elytra");
-            game.carried = Some(bay::from_text(&old));
-            elytra::set(None);
-            for (key, value) in elytra::texts(None) {
-                game.native_set_setting(elytra::ID, key, &value);
+            let Some(old) = held else {
+                return core::ops::ControlFlow::Break(());
+            };
+            // The file goes empty first: a failed save keeps the elytra in
+            // the bay, and the next tick's restore refills it from the file.
+            if elytra::save_bay(&dir, None).is_err() {
+                return core::ops::ControlFlow::Break(());
             }
+            elytra::set(None);
+            game.carried = Some(bay::from_text(&old));
         }
     }
     core::ops::ControlFlow::Break(())

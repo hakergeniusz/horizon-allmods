@@ -46,7 +46,7 @@ fn statview_draw(
 
     // The view's own numbers first: what the search holds, and the rows each
     // tab shows once the search filtered them.
-    let (tab, search, caret, focused, sort_col, sort_asc, selected) =
+    let (tab, search, caret, focused, sort_col, sort_asc, mob_sort, mob_asc, selected, selected_mob) =
         statview::with_view(|v| {
             (
                 v.tab,
@@ -55,7 +55,10 @@ fn statview_draw(
                 v.focused,
                 v.sort_col,
                 v.sort_asc,
+                v.mob_sort,
+                v.mob_asc,
                 v.selected.clone(),
+                v.selected_mob.clone(),
             )
         });
     let item_name = |game: &crate::game::Game<'_>, id: &str| {
@@ -95,28 +98,42 @@ fn statview_draw(
                 (m, name)
             })
             .collect();
-        statview::with_view(|v| v.rows(pairs, |_, _| 0))
+        statview::with_view(|v| {
+            v.mob_rows(pairs, |s, mob| match s {
+                statview::MobSort::Kills => game.stats.get("killed", mob),
+                statview::MobSort::KilledBy => game.stats.get("killed_by", mob),
+                statview::MobSort::Name => 0,
+            })
+        })
     };
-    // The grid's order, for the click helper to find a slot's item.
+    // The grids' order, for the click helper to find a slot's entry.
     let drawn: Vec<String> = item_rows.iter().map(|(id, _)| id.clone()).collect();
-    statview::with_view(|v| v.drawn = drawn);
+    let drawn_mobs: Vec<String> = mob_rows.iter().map(|(m, _)| m.clone()).collect();
+    statview::with_view(|v| {
+        v.drawn = drawn;
+        v.drawn_mobs = drawn_mobs;
+    });
 
     let main = statview::main_rect(w, h);
     let [mx, my, mw, mh] = main;
-    let details = tab == 1 && selected.is_some();
+    let details = match tab {
+        1 => selected.is_some(),
+        2 => selected_mob.is_some(),
+        _ => false,
+    };
     let cols = statview::grid_cols(w, h, details);
     let grid_rows = item_rows.len().div_ceil(cols);
+    let mob_grid_rows = mob_rows.len().div_ceil(cols);
     let content = match tab {
         0 => ROW_H * general_rows.len() as f32 + 4.0,
         1 => statview::SORT_H + 2.0 + statview::SLOT * grid_rows as f32 + 4.0,
-        _ => MOB_ROW * mob_rows.len() as f32 + 4.0,
+        _ => statview::SORT_H + 2.0 + statview::SLOT * mob_grid_rows as f32 + 4.0,
     };
     let scroll = statview::with_view(|v| {
         v.clamp(my, my + mh, content);
         v.layout = Some((my, my + mh, content));
         v.scroll
     });
-    const MOB_ROW: f32 = 36.0;
 
     // ===== The sidebar =====
     let side = statview::sidebar_rect(h);
@@ -305,20 +322,84 @@ fn statview_draw(
                 }
             }
         }
-        // Mobs: the name, its kills and its killed-by, uniform white.
+        // Mobs: the sort header, the grid with each mob's spawn egg and its
+        // kill count, and the picked mob's details strip along the right.
         _ => {
-            let pick = hovered_row(MOB_ROW);
-            for (i, (mob, _name)) in mob_rows.iter().enumerate() {
-                let y = row_y(i as f32, MOB_ROW);
-                if !visible(y, MOB_ROW) {
+            for (c, (label, on)) in [
+                ("Name".to_owned(), false),
+                (
+                    crate::game::screen_info::tr("stat_type.minecraft.killed", &[]),
+                    mob_sort == statview::MobSort::Kills,
+                ),
+                (
+                    crate::game::screen_info::tr("stat_type.minecraft.killed_by", &[]),
+                    mob_sort == statview::MobSort::KilledBy,
+                ),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let hx = mx + 4.0 + c as f32 * 64.0;
+                if hx >= mx + mw - statview::BAR_W {
+                    break;
+                }
+                batch.text(atlas, &label, hx, my + 4.0, DIM, true);
+                if on {
+                    let marker = if mob_asc { "^" } else { "v" };
+                    batch.text(atlas, marker, hx + 52.0, my + 4.0, ACCENT, true);
+                }
+            }
+            let grid_top = my + statview::SORT_H + 4.0;
+            let offset = scroll.max(0.0);
+            for (i, (mob, name)) in mob_rows.iter().enumerate() {
+                let (x, uy) = statview::slot_at(w, h, i, details);
+                let y = uy - offset;
+                if y < grid_top - statview::SLOT || y + statview::SLOT > my + mh {
                     continue;
                 }
-                if i == pick {
-                    batch.fill(atlas, mx + 2.0, y, mw - statview::BAR_W - 4.0, MOB_ROW, HOVER);
+                let picked = selected_mob.as_deref() == Some(mob.as_str());
+                batch.sprite(atlas, "gui/sprites/container/slot", x, y);
+                // The mob rendered: its spawn egg, when the registry has one
+                // (the few boss mobs without one leave an honest empty slot).
+                let egg = format!("minecraft:{}_spawn_egg", mob.trim_start_matches("minecraft:"));
+                if game.items().get(&egg).is_some() {
+                    game.draw_item(batch, &ItemStack::new(&egg, 1), x + 2.0, y + 2.0);
                 }
-                let mob_name = Text::translate(&format!("entity.{}", mob.replace(':', ".")), &[]);
+                if picked {
+                    batch.fill(atlas, x, y, statview::SLOT, 1.0, ACCENT);
+                    batch.fill(atlas, x, y + statview::SLOT - 1.0, statview::SLOT, 1.0, ACCENT);
+                    batch.fill(atlas, x, y, 1.0, statview::SLOT, ACCENT);
+                    batch.fill(atlas, x + statview::SLOT - 1.0, y, 1.0, statview::SLOT, ACCENT);
+                } else if ui::hovered(game.cursor, x, y, statview::SLOT, statview::SLOT) {
+                    batch.fill(atlas, x, y, statview::SLOT, statview::SLOT, HOVER);
+                }
                 let kills = game.stats.get("killed", mob);
-                let by = game.stats.get("killed_by", mob);
+                if kills > 0 {
+                    let text = statview::format(statview::Format::Default, kills);
+                    let tw = HudBatch::text_width(atlas, &text);
+                    batch.text(
+                        atlas,
+                        &text,
+                        x + statview::SLOT - tw - 1.0,
+                        y + statview::SLOT - 10.0,
+                        BADGE,
+                        true,
+                    );
+                }
+                if ui::hovered(game.cursor, x, y, statview::SLOT, statview::SLOT) {
+                    game.tooltip(batch, name, x + statview::SLOT, y + statview::SLOT);
+                }
+            }
+            // The details strip: the picked mob's name and its two counts,
+            // the lines the old rows showed.
+            if details {
+                let id = selected_mob.expect("details only while a mob is picked");
+                let [dx, dy, dw, dh] = statview::details_rect(w, h);
+                batch.fill(atlas, dx, dy, dw, dh, SIDEBAR);
+                batch.fill(atlas, dx, dy, 1.0, dh, ACCENT);
+                let mob_name = Text::translate(&format!("entity.{}", id.replace(':', ".")), &[]);
+                let kills = game.stats.get("killed", &id);
+                let by = game.stats.get("killed_by", &id);
                 let k = if kills == 0 {
                     Text::translate(
                         "stat_type.minecraft.killed.none",
@@ -341,13 +422,12 @@ fn statview_draw(
                         &[mob_name.clone(), Text::literal(by.to_string())],
                     )
                 };
-                let (kc, bc) = (
-                    if kills > 0 { DIM } else { 0xFF80_8080 },
-                    if by > 0 { DIM } else { 0xFF80_8080 },
-                );
-                batch.text_styled(atlas, &mob_name, mx + 6.0, y + 1.0, u32::MAX, true);
-                batch.text_styled(atlas, &k, mx + 16.0, y + 10.0, kc, true);
-                batch.text_styled(atlas, &b, mx + 16.0, y + 19.0, bc, true);
+                let mut y = dy + 6.0;
+                batch.text_styled(atlas, &mob_name, dx + 6.0, y, u32::MAX, true);
+                y += ROW_H + 2.0;
+                batch.text_styled(atlas, &k, dx + 6.0, y, u32::MAX, true);
+                y += ROW_H + 2.0;
+                batch.text_styled(atlas, &b, dx + 6.0, y, u32::MAX, true);
             }
         }
     }

@@ -28,6 +28,9 @@ CLI = LAUNCHER / "native/tools/5a64af938ec8/bin/horizon-mixins"
 RUST = LAUNCHER / "rust/1.99.1-x86_64-unknown-linux-gnu"
 
 ROOT = Path(__file__).resolve().parents[1]
+# The launcher wipes its own staging dirs on update passes; the extracted
+# sources ten of these bundles come from live in the repo instead.
+VENDOR_STORE = ROOT / "vendor/store"
 PIN = "2ebf00a0281c592f79191e76fce0e7d522c6f425"
 MIXINS_PIN = "5a64af938ec86b00d53d16a408aabc0038fb3e57"
 
@@ -39,22 +42,24 @@ MIXINS_PIN = "5a64af938ec86b00d53d16a408aabc0038fb3e57"
 # the clean-room iron_stomach/soft_landing (MIT, spec-only implementations);
 # statview is the clean-room statistics screen.
 BUNDLES = [
-    ("eatinganimation", STORE / "eatinganimation", None),
-    ("fps_overlay", STORE / "fps_overlay", None),
-    ("fullbright_horizon", STORE / "fullbright_horizon", None),
-    ("mousetricks", STORE / "mousetricks", None),
-    ("zoom", STORE / "zoom", None),
-    ("smartf3", STORE / "smartf3", None),
+    ("eatinganimation", VENDOR_STORE / "eatinganimation", None),
+    ("fps_overlay", VENDOR_STORE / "fps_overlay", None),
+    ("fullbright_horizon", VENDOR_STORE / "fullbright_horizon", None),
+    ("mousetricks", VENDOR_STORE / "mousetricks", None),
+    ("zoom", VENDOR_STORE / "zoom", None),
+    ("smartf3", VENDOR_STORE / "smartf3", None),
     ("worldedit", STORE / "worldedit", None),
-    ("chatheads", GAME_MODS / "chatheads.hnmod", None),
-    ("motion_blur", GAME_MODS / "motion_blur.hnmod", None),
-    ("recipes", GAME_MODS / "recipes.hnmod", None),
-    ("schematics", GAME_MODS / "schematics.hnmod", None),
-    ("shulker_peek", GAME_MODS / "shulker_peek.hnmod", None),
+    ("chatheads", VENDOR_STORE / "chatheads", None),
+    ("motion_blur", VENDOR_STORE / "motion_blur", None),
+    ("recipes", VENDOR_STORE / "recipes", None),
+    ("schematics", VENDOR_STORE / "schematics", None),
+    ("shulker_peek", VENDOR_STORE / "shulker_peek", None),
     ("baritone", ROOT / "vendor/baritone-1.1.52.hnmod", "d46c541d1e673a95f343960b6fb1646a0669ec07df11958af97f1a76b3b14ffa"),
     ("freecam", HOME / "Projects/freecam/target/freecam-0.2.0.hnmod", None),
-    ("pingfix", HOME / "Projects/pingfix/target/pingfix-0.1.1.hnmod", None),
-    ("statview", HOME / "Projects/statview/target/statview-1.1.0.hnmod", None),
+    ("pingfix", HOME / "Projects/pingfix/target/pingfix-0.2.0.hnmod", None),
+    ("mlg", HOME / "Projects/mlg/target/mlg-0.1.0.hnmod", None),
+    ("auto_eat", HOME / "Projects/auto_eat/target/auto_eat-0.1.0.hnmod", None),
+    ("statview", HOME / "Projects/statview/target/statview-1.2.0.hnmod", None),
     ("portal_interact", HOME / "Projects/portal_interact/target/portal_interact-0.1.0.hnmod", None),
     ("iron_stomach", HOME / "Projects/iron_stomach/target/iron_stomach-1.2.0.hnmod", None),
     ("soft_landing", HOME / "Projects/soft_landing/target/soft_landing-1.1.0.hnmod", None),
@@ -62,7 +67,7 @@ BUNDLES = [
     ("baritone_helper", HOME / "Projects/baritone-helper/target/baritone_helper-0.1.0.hnmod", None),
     ("fly", HOME / "Projects/fly/target/fly-0.1.0.hnmod", None),
     ("no_chat_reports", HOME / "Projects/no_chat_reports/target/no_chat_reports-0.1.0.hnmod", None),
-    ("trajectory_preview", HOME / "Projects/trajectory_preview/target/trajectory_preview-0.2.1.hnmod", None),
+    ("trajectory_preview", HOME / "Projects/trajectory_preview/target/trajectory_preview-0.3.0.hnmod", None),
     ("elytra_slot", HOME / "Projects/elytra_slot/target/elytra_slot-0.3.0.hnmod", None),
     ("hey_wiki", HOME / "Projects/hey_wiki/target/hey_wiki-0.2.0.hnmod", None),
     # barrel_roll dropped 2026-11-14: gyro (CGRLabs, MIT) already does the

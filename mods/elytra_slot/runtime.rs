@@ -3,12 +3,15 @@
 // the game. Every decision the helpers act on lives here, and every one of
 // those decisions is tested below.
 //
-// The model (0.2.0): the mod's slot is its own bay beside the armor row, and
+// The model (0.3.0): the mod's slot is its own bay beside the armor row, and
 // the elytra it holds is REAL state, not a chest-slot swap — the chestplate
 // stays worn the whole time, armor and all. The held stack lives as plain
-// text (item, count, damage, enchantments, repair cost) in the mod's setting
-// files, so it survives restarts and deaths; the helpers turn that text back
-// into the game's own ItemStack for drawing, the cursor and the glide check.
+// text (item, count, damage, enchantments, repair cost) in ONE config file
+// that every save writes atomically and reads back before the game's stacks
+// move — 0.2.0 trusted the engine's setting writes, which in the live game
+// silently did nothing, so stored elytras died with the process. The helpers
+// turn that text back into the game's own ItemStack for drawing, the cursor
+// and the glide check.
 // One honest limitation: the glide check is a client answer, so the slot
 // flies in single player and on LAN (where the client hosts the world) and
 // stays display-only on a remote server. And the elytra in this bay does not
@@ -22,7 +25,7 @@
 /// The mod's registry id: the settings folder and the Options > Mods row.
 pub const ID: &str = "elytra_slot";
 /// The version the row shows.
-pub const VERSION: &str = "0.2.0";
+pub const VERSION: &str = "0.3.0";
 /// The mod's description for its row.
 pub const DESCRIPTION: &str = "The survival inventory gains an elytra slot beside the armor \
 row: the elytra it holds is its own bay, so your chestplate stays worn beside it. Click to \
@@ -40,15 +43,9 @@ pub const SLOT_Y: f32 = 8.0;
 /// An inventory slot is 18 GUI pixels wide (16 plus the frame).
 pub const SLOT_SIZE: f32 = 18.0;
 
-/// The mod's setting files (one file per key under the mod's data dir),
-/// which every gate re-reads: a change lands within the tick that follows it.
+/// The mod's setting file for the Enabled toggle (one file per key under the
+/// mod's data dir), which every gate re-reads.
 pub const SETTING_ENABLED: &str = "enabled";
-/// The held stack, one file per part.
-pub const SLOT_ITEM: &str = "slot.item";
-pub const SLOT_COUNT: &str = "slot.count";
-pub const SLOT_DAMAGE: &str = "slot.damage";
-pub const SLOT_ENCH: &str = "slot.ench";
-pub const SLOT_REPAIR: &str = "slot.repair";
 
 /// The stack the bay holds, as the plain text the setting files keep. An
 /// elytra carries a damage bar, enchantments and a repair cost; the custom
@@ -98,23 +95,73 @@ pub fn ench_of(text: &str) -> Vec<(String, u32)> {
         .collect()
 }
 
-/// The bay's stack as the files hold it: a `slot.item` file that names the
-/// elytra. Empty, missing or wrong-id files hold nothing.
-pub fn stack_of(get: impl Fn(&str) -> Option<String>) -> Option<SlotStack> {
-    let item = get(SLOT_ITEM)?.trim().to_owned();
+// ---- the bay's durable copy (0.3.0): ONE file, saved verified ----
+//
+// 0.2.0 kept the bay in five `native_set_setting` files and trusted those
+// writes blindly; in the live game they silently did nothing, so a stored
+// elytra lived only in memory and was lost at the next launch — the mod took
+// the item and its persistence failed at once. The rule now: the file is
+// written FIRST (temp + rename), read back and parsed, and the game's stacks
+// only move when the file provably holds the new bay. A save that cannot be
+// verified keeps the cursor's item where it is and records why, and the
+// settings page says so — nothing eats an item again.
+
+/// The bay file's name under the mod's config folder.
+pub const BAY_FILE: &str = "bay.txt";
+
+/// The last save failure, for the settings page; cleared by the next good save.
+static SAVE_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
+/// The last save failure, if any.
+pub fn save_error() -> Option<String> {
+    SAVE_ERROR.lock().ok()?.clone()
+}
+
+fn note_save_error(error: Option<String>) {
+    if let Ok(mut slot) = SAVE_ERROR.lock() {
+        *slot = error;
+    }
+}
+
+/// The bay's durable text: five newline-separated fields in a fixed order.
+/// An empty text is an empty bay.
+pub fn bay_text(stack: Option<&SlotStack>) -> String {
+    let Some(s) = stack else {
+        return String::new();
+    };
+    format!(
+        "{}\n{}\n{}\n{}\n{}",
+        s.item,
+        s.count,
+        s.damage,
+        ench_text(&s.ench),
+        s.repair
+    )
+}
+
+/// The durable text back into a stack. Missing fields, a short file, a
+/// non-elytra item or junk parse as an empty bay — the file is user-editable
+/// text, and a bay that never held an elytra is an empty bay.
+pub fn bay_of(text: &str) -> Option<SlotStack> {
+    let mut lines = text.lines();
+    let item = lines.next()?.trim().to_owned();
     if item != ELYTRA {
         return None;
     }
-    let count = get(SLOT_COUNT)
-        .and_then(|v| v.trim().parse::<u32>().ok())
+    let count = lines
+        .next()?
+        .trim()
+        .parse::<u32>()
+        .ok()
         .unwrap_or(1)
         .max(1);
-    let damage = get(SLOT_DAMAGE)
-        .and_then(|v| v.trim().parse::<u32>().ok())
-        .unwrap_or(0);
-    let ench = ench_of(&get(SLOT_ENCH).unwrap_or_default());
-    let repair = get(SLOT_REPAIR)
-        .and_then(|v| v.trim().parse::<u32>().ok())
+    let damage = lines.next()?.trim().parse::<u32>().ok().unwrap_or(0);
+    let ench = ench_of(lines.next().unwrap_or(""));
+    let repair = lines
+        .next()?
+        .trim()
+        .parse::<u32>()
+        .ok()
         .unwrap_or(0);
     Some(SlotStack {
         item,
@@ -125,18 +172,42 @@ pub fn stack_of(get: impl Fn(&str) -> Option<String>) -> Option<SlotStack> {
     })
 }
 
-/// The files a held stack writes (empty item text clears the bay).
-pub fn texts(stack: Option<&SlotStack>) -> Vec<(&'static str, String)> {
-    let Some(s) = stack else {
-        return vec![(SLOT_ITEM, String::new())];
-    };
-    vec![
-        (SLOT_ITEM, s.item.clone()),
-        (SLOT_COUNT, s.count.to_string()),
-        (SLOT_DAMAGE, s.damage.to_string()),
-        (SLOT_ENCH, ench_text(&s.ench)),
-        (SLOT_REPAIR, s.repair.to_string()),
-    ]
+/// The bay file's path: `<config>/elytra_slot/bay.txt`.
+pub fn bay_path(config_dir: &std::path::Path) -> std::path::PathBuf {
+    config_dir.join(ID).join(BAY_FILE)
+}
+
+/// Saves the bay and verifies it: the file is written atomically (temp +
+/// rename) and read back — `Ok` only when what sits on disk parses to the
+/// same stack that was asked for.
+pub fn save_bay(config_dir: &std::path::Path, stack: Option<&SlotStack>) -> Result<(), String> {
+    use std::fs;
+    let path = bay_path(config_dir);
+    let parent = path
+        .parent()
+        .ok_or_else(|| "the bay file has no parent folder".to_owned())?;
+    let saved = (|| -> Result<(), String> {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let text = bay_text(stack);
+        let tmp = parent.join(".bay.tmp");
+        fs::write(&tmp, text).map_err(|e| e.to_string())?;
+        fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+        let read = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        match (bay_of(&read).as_ref(), stack) {
+            (None, None) => Ok(()),
+            (Some(a), Some(b)) if a == b => Ok(()),
+            _ => Err("the file on disk is not the bay that was saved".to_owned()),
+        }
+    })();
+    note_save_error(saved.as_ref().err().cloned());
+    saved
+}
+
+/// The bay as the file holds it; a missing or junk file is None. Never an
+/// error: an unloadable file must not take the bay away from the live state.
+pub fn load_bay(config_dir: &std::path::Path) -> Option<SlotStack> {
+    let text = std::fs::read_to_string(bay_path(config_dir)).ok()?;
+    bay_of(&text)
 }
 
 /// Whether the mod is on. A missing file means ON — the mod exists for the
@@ -227,52 +298,56 @@ pub fn page_click(i: usize, on: bool) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::{
-        click_action, ench_of, ench_text, held, over_slot, page_click, page_labels,
-        set, setting_on, stack_of, texts, Action, SlotStack, ELYTRA, SLOT_ENCH, SLOT_ITEM,
-        SLOT_X,
+        bay_of, bay_path, bay_text, click_action, ench_of, ench_text, held, over_slot,
+        page_click, page_labels, save_bay, set, setting_on, Action, SlotStack, ELYTRA, SLOT_X,
     };
 
-    fn get(key: &str) -> Option<String> {
-        match key {
-            SLOT_ITEM => Some(ELYTRA.to_owned()),
-            super::SLOT_COUNT => Some("1".into()),
-            super::SLOT_DAMAGE => Some("31".into()),
-            SLOT_ENCH => Some("minecraft:unbreaking:3;minecraft:mending:1".into()),
-            super::SLOT_REPAIR => Some("2".into()),
-            _ => None,
+    fn the_stack() -> SlotStack {
+        SlotStack {
+            item: ELYTRA.to_owned(),
+            count: 1,
+            damage: 31,
+            ench: vec![
+                ("minecraft:unbreaking".to_owned(), 3),
+                ("minecraft:mending".to_owned(), 1),
+            ],
+            repair: 2,
         }
     }
 
     #[test]
-    fn the_bay_round_trips_through_the_files() {
-        let stack = stack_of(get).expect("the files hold an elytra");
+    fn the_bay_round_trips_through_its_file_text() {
+        let stack = the_stack();
         assert!(stack.is_elytra());
-        assert_eq!(stack.count, 1);
-        assert_eq!(stack.damage, 31);
-        assert_eq!(stack.repair, 2);
+        let text = bay_text(Some(&stack));
+        assert_eq!(bay_of(&text).as_ref(), Some(&stack), "the text reads back");
+        assert_eq!(bay_text(Some(bay_of(&text).as_ref().unwrap())), text);
+        assert_eq!(bay_of(&bay_text(None)), None, "an empty text is an empty bay");
+        assert_eq!(bay_of(""), None);
+        assert_eq!(bay_of("minecraft:bow\n1\n0\n\n0"), None, "a wrong item holds nothing");
+        assert_eq!(bay_of("minecraft:elytra\n1\n0\n\n0").map(|s| s.damage), Some(0), "an empty ench line parses");
         assert_eq!(
-            stack.ench,
-            vec![
-                ("minecraft:unbreaking".to_owned(), 3),
-                ("minecraft:mending".to_owned(), 1)
-            ]
+            bay_of("minecraft:elytra\nnot-a-number\n0\n\n0").map(|s| s.count),
+            Some(1),
+            "junk numbers default, like the files always have"
         );
-        let files = texts(Some(&stack));
-        let read = |key: &str| {
-            files
-                .iter()
-                .find(|(k, _)| *k == key)
-                .map(|(_, v)| v.clone())
-        };
-        assert_eq!(stack_of(read), Some(stack), "files write back the same stack");
-        let empty = stack_of(|_| None);
-        assert_eq!(empty, None);
-        let cleared = texts(None);
-        assert_eq!(cleared.len(), 1);
-        assert_eq!(cleared[0].0, SLOT_ITEM);
-        assert!(cleared[0].1.is_empty(), "an empty item text clears the bay");
-        assert_eq!(stack_of(|k| (k == SLOT_ITEM).then(|| "minecraft:elytra".into())).map(|s| s.damage), Some(0), "missing parts default");
-        assert_eq!(stack_of(|k| (k == SLOT_ITEM).then(|| "minecraft:bow".into())), None, "a wrong item holds nothing");
+    }
+
+    #[test]
+    fn the_bay_saves_verified_and_refuses_to_lie() {
+        let dir = std::env::temp_dir().join(format!("elytra_slot_test_{}", std::process::id()));
+        let stack = the_stack();
+        assert_eq!(save_bay(&dir, Some(&stack)), Ok(()));
+        let read = std::fs::read_to_string(bay_path(&dir)).expect("the file exists");
+        assert_eq!(bay_of(&read).as_ref(), Some(&stack), "the file holds the stack");
+        // A second save over the first, then the clear.
+        let mut other = the_stack();
+        other.damage = 13;
+        assert_eq!(save_bay(&dir, Some(&other)), Ok(()));
+        assert_eq!(bay_of(&std::fs::read_to_string(bay_path(&dir)).unwrap()).map(|s| s.damage), Some(13));
+        assert_eq!(save_bay(&dir, None), Ok(()));
+        assert_eq!(std::fs::read_to_string(bay_path(&dir)).unwrap(), "", "the clear empties the file");
+        let _ = std::fs::remove_dir_all(dir.parent().unwrap().join("elytra_slot"));
     }
 
     #[test]

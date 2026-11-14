@@ -1,6 +1,6 @@
 [mod]
 id = "statview"
-version = "1.1.0"
+version = "1.2.0"
 priority = 100
 
 # The commit it was tested on: it redraws the Statistics screen whole and
@@ -10,7 +10,8 @@ priority = 100
 horizon_revision = "2ebf00a0281c592f79191e76fce0e7d522c6f425"
 
 # The mod's brain: pure standard library, no game types, tested on its own —
-# the view model (search, caret, tabs, sort, scroll) and the value formats.
+# the view model (search, caret, tabs, item and mob sorts, scroll) and the
+# value formats.
 [[module]]
 id = "runtime"
 file = "crates/horizon-client/src/game.rs"
@@ -19,7 +20,8 @@ source = "runtime.rs"
 
 # The Statistics screen drawn whole while the mod asks: the vanilla drawing
 # is skipped (the hook breaks) and the rebuilt one runs — search box, tabs,
-# the Items grid with count badges, the mob and general rows.
+# the Items grid with count badges, the mob grid with its spawn eggs, and
+# the details strips.
 [[injection]]
 id = "draw"
 kind = "HEAD"

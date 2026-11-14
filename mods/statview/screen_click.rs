@@ -76,45 +76,81 @@ fn statview_screen_click(game: &mut crate::game::Game<'_>, size: [u32; 2]) -> co
         statview::with_view(|v| v.focused = false);
         return core::ops::ControlFlow::Break(());
     }
-    let details = {
-        let v = statview::with_view(|v| v.selected.clone());
-        v.is_some()
-    };
+    let details = statview::with_view(|v| v.selected.is_some() || v.selected_mob.is_some());
     statview::with_view(|v| {
         v.focused = false;
-        if v.tab != 1 {
-            return;
-        }
-        // The sort header: a column flips or takes over.
-        for (c, _) in statview::ITEM_COLUMNS.into_iter().enumerate() {
-            let hx = main[0] + 4.0 + c as f32 * 64.0;
-            if ui::hovered(game.cursor, hx, main[1], 60.0, statview::SORT_H) {
-                v.sort_clicked(c);
-                return;
-            }
-        }
-        // The grid: a slot toggles the details strip's pick.
-        let grid_top = main[1] + statview::SORT_H + 4.0;
-        let offset = v.scroll.max(0.0);
-        let count = v.drawn.len();
-        for i in 0..count {
-            let (x, uy) = statview::slot_at(w, h, i, details);
-            let y = uy - offset;
-            if y >= main[1] + main[3] {
-                break;
-            }
-            if y < grid_top - SLOT {
-                continue;
-            }
-            if ui::hovered(game.cursor, x, y, SLOT, SLOT) {
-                let id = v.drawn_at(i).map(str::to_owned);
-                if v.selected == id {
-                    v.selected = None;
-                } else {
-                    v.selected = id;
+        match v.tab {
+            // The Items tab: its sort header and its grid.
+            1 => {
+                // The sort header: a column flips or takes over.
+                for (c, _) in statview::ITEM_COLUMNS.into_iter().enumerate() {
+                    let hx = main[0] + 4.0 + c as f32 * 64.0;
+                    if ui::hovered(game.cursor, hx, main[1], 60.0, statview::SORT_H) {
+                        v.sort_clicked(c);
+                        return;
+                    }
                 }
-                return;
+                // The grid: a slot toggles the details strip's pick.
+                let grid_top = main[1] + statview::SORT_H + 4.0;
+                let offset = v.scroll.max(0.0);
+                let count = v.drawn.len();
+                for i in 0..count {
+                    let (x, uy) = statview::slot_at(w, h, i, details);
+                    let y = uy - offset;
+                    if y >= main[1] + main[3] {
+                        break;
+                    }
+                    if y < grid_top - SLOT {
+                        continue;
+                    }
+                    if ui::hovered(game.cursor, x, y, SLOT, SLOT) {
+                        let id = v.drawn_at(i).map(str::to_owned);
+                        if v.selected == id {
+                            v.selected = None;
+                        } else {
+                            v.selected = id;
+                        }
+                        return;
+                    }
+                }
             }
+            // The Mobs tab: its sort header and its grid, the same shapes.
+            2 => {
+                for (c, sort) in [
+                    (0usize, statview::MobSort::Name),
+                    (1, statview::MobSort::Kills),
+                    (2, statview::MobSort::KilledBy),
+                ] {
+                    let hx = main[0] + 4.0 + c as f32 * 64.0;
+                    if ui::hovered(game.cursor, hx, main[1], 60.0, statview::SORT_H) {
+                        v.mob_sort_clicked(sort);
+                        return;
+                    }
+                }
+                let grid_top = main[1] + statview::SORT_H + 4.0;
+                let offset = v.scroll.max(0.0);
+                let count = v.drawn_mobs.len();
+                for i in 0..count {
+                    let (x, uy) = statview::slot_at(w, h, i, details);
+                    let y = uy - offset;
+                    if y >= main[1] + main[3] {
+                        break;
+                    }
+                    if y < grid_top - SLOT {
+                        continue;
+                    }
+                    if ui::hovered(game.cursor, x, y, SLOT, SLOT) {
+                        let id = v.drawn_mob_at(i).map(str::to_owned);
+                        if v.selected_mob == id {
+                            v.selected_mob = None;
+                        } else {
+                            v.selected_mob = id;
+                        }
+                        return;
+                    }
+                }
+            }
+            _ => {}
         }
     });
     core::ops::ControlFlow::Break(())

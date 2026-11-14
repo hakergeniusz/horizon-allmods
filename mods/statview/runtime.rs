@@ -13,11 +13,11 @@
 /// The mod's registry id: the settings folder and the Options > Mods row.
 pub const ID: &str = "statview";
 /// The version the row shows.
-pub const VERSION: &str = "1.1.0";
+pub const VERSION: &str = "1.2.0";
 /// The mod's description for its row.
 pub const DESCRIPTION: &str = "A rebuilt Statistics screen: a sidebar with search and \
-categories, the item grid with a details panel, columns that sort. White-box \
-take on BetterStats Screen's layout (MIT), built from the engine's own parts.";
+categories, the item and mob grids (each mob's spawn egg, its kill count), \
+details panels, columns that sort. Built from the engine's own parts.";
 
 // ===== The screen's geometry (drawn and clicked alike) =====
 
@@ -64,7 +64,12 @@ pub fn cat_rect(i: usize) -> [f32; 4] {
 /// The main area's box: the list, its scrollbar and the Items grid all live
 /// here.
 pub fn main_rect(w: f32, h: f32) -> [f32; 4] {
-    [MAIN_X, LIST_TOP, w - MAIN_X - MAIN_GAP, h - LIST_TOP - FOOTER]
+    [
+        MAIN_X,
+        LIST_TOP,
+        w - MAIN_X - MAIN_GAP,
+        h - LIST_TOP - FOOTER,
+    ]
 }
 
 /// The details strip's box, on the main area's right (the picked item's
@@ -113,7 +118,6 @@ pub fn bar_at(w: f32, h: f32) -> (f32, f32, f32) {
     let [mx, my, mw, mh] = main_rect(w, h);
     (mx + mw - BAR_W, my, my + mh)
 }
-
 
 /// The toggle's setting file (one file per key under the mod's data dir),
 /// read fresh from disk every time a gate runs.
@@ -286,6 +290,18 @@ pub fn matches(search: &str, id: &str, display: &str) -> bool {
         .all(|word| hay.contains(&word.to_lowercase()))
 }
 
+/// The Mobs tab's sort column: the kills, the killed-by count, or the name.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MobSort {
+    /// The mobs the player killed, biggest first.
+    #[default]
+    Kills,
+    /// The mobs that killed the player, biggest first.
+    KilledBy,
+    /// The mobs by name, A first.
+    Name,
+}
+
 /// The view model of one open Statistics screen.
 #[derive(Debug, Default)]
 pub struct View {
@@ -299,10 +315,15 @@ pub struct View {
     /// The Items tab's sort column (an [`ITEM_COLUMNS`] index) and direction.
     pub sort_col: usize,
     pub sort_asc: bool,
+    /// The Mobs tab's sort and direction (the counts start descending).
+    pub mob_sort: MobSort,
+    pub mob_asc: bool,
     /// The list's scroll offset, in pixels.
     pub scroll: f32,
     /// The Items tab's open slot, by item id, if one is picked.
     pub selected: Option<String>,
+    /// The Mobs tab's picked mob, by id, if one is picked.
+    pub selected_mob: Option<String>,
     /// The list region and content height the last frame drew —
     /// `(top, bottom, content)` — for the wheel and the scrollbar between
     /// frames. Set by the draw, read by the wheel.
@@ -310,6 +331,9 @@ pub struct View {
     /// The item ids the last frame drew, in grid order — the click finds a
     /// slot's item by its index here. Set by the draw.
     pub drawn: Vec<String>,
+    /// The mob ids the last frame drew, in grid order — the click finds a
+    /// slot's mob the same way. Set by the draw.
+    pub drawn_mobs: Vec<String>,
 }
 
 impl View {
@@ -325,6 +349,11 @@ impl View {
     /// The item a grid slot holds, by its drawn index; none past the end.
     pub fn drawn_at(&self, i: usize) -> Option<&str> {
         self.drawn.get(i).map(String::as_str)
+    }
+
+    /// The mob a grid slot holds, by its drawn index; none past the end.
+    pub fn drawn_mob_at(&self, i: usize) -> Option<&str> {
+        self.drawn_mobs.get(i).map(String::as_str)
     }
 
     /// Typed text lands at the caret.
@@ -431,6 +460,19 @@ impl View {
         self.scroll = 0.0;
     }
 
+    /// The Mobs tab's header clicked: the same column flips its direction,
+    /// a new count sort starts descending (the biggest first), the name
+    /// starts ascending.
+    pub fn mob_sort_clicked(&mut self, sort: MobSort) {
+        if self.mob_sort == sort {
+            self.mob_asc = !self.mob_asc;
+        } else {
+            self.mob_sort = sort;
+            self.mob_asc = sort == MobSort::Name;
+        }
+        self.scroll = 0.0;
+    }
+
     /// The rows the screen shows: the entries whose id or display name
     /// answers the search, sorted by the Items tab's column (values by the
     /// `value` closure, ties by id) or by name otherwise. `values(col, id)`
@@ -462,6 +504,32 @@ impl View {
                     .cmp(&b.1.to_lowercase())
                     .then_with(|| a.0.cmp(&b.0))
             });
+        }
+        rows
+    }
+
+    /// The Mobs tab's rows: the search filters, then the sort orders — the
+    /// counts descending first (ties by name), the name ascending.
+    /// `value` reads a count; the caller supplies it so the model stays
+    /// free of game types.
+    pub fn mob_rows(
+        &self,
+        entries: Vec<(String, String)>,
+        value: impl Fn(MobSort, &str) -> i32,
+    ) -> Vec<(String, String)> {
+        let mut rows: Vec<(String, String)> = entries
+            .into_iter()
+            .filter(|(id, display)| matches(&self.search, id, display))
+            .collect();
+        let (sort, asc) = (self.mob_sort, self.mob_asc);
+        rows.sort_by(|a, b| {
+            let (va, vb) = (value(sort, &a.0), value(sort, &b.0));
+            va.cmp(&vb)
+                .then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase()))
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        if !asc {
+            rows.reverse();
         }
         rows
     }
@@ -518,8 +586,15 @@ mod tests {
     fn the_screen_geometry_holds_together() {
         let (w, h) = (480.0, 300.0);
         let main = main_rect(w, h);
-        assert!(main[0] > SIDEBAR_X + SIDEBAR_W, "the main area clears the sidebar");
-        assert_eq!(main[3], h - LIST_TOP - FOOTER, "the footer clears the main area");
+        assert!(
+            main[0] > SIDEBAR_X + SIDEBAR_W,
+            "the main area clears the sidebar"
+        );
+        assert_eq!(
+            main[3],
+            h - LIST_TOP - FOOTER,
+            "the footer clears the main area"
+        );
         let (bar_x, top, bottom) = bar_at(w, h);
         assert!(bar_x >= main[0] + main[2] - BAR_W);
         assert_eq!((top, bottom), (main[1], main[1] + main[3]));
@@ -531,7 +606,10 @@ mod tests {
         assert_eq!((sx, sy), (MAIN_X + 2.0, LIST_TOP + SORT_H + 2.0));
         let (sx_n, sy_n) = slot_at(w, h, 1, false);
         assert_eq!(sy_n, sy, "slot 1 shares slot 0's row");
-        assert!((sx_n - sx - SLOT).abs() < 1e-4, "the column pitch is a slot");
+        assert!(
+            (sx_n - sx - SLOT).abs() < 1e-4,
+            "the column pitch is a slot"
+        );
         let (_, sy_row) = slot_at(w, h, with, false);
         assert!((sy_row - sy - SLOT).abs() < 1e-4, "the row pitch is a slot");
         // A tiny window still lays one column out, and nothing goes negative.
@@ -541,15 +619,21 @@ mod tests {
         for i in 0..3usize {
             let [x, y, cw, ch] = cat_rect(i);
             assert!(cw > 0.0 && ch == CAT_H);
-            assert!((y - CAT_Y - i as f32 * CAT_STEP).abs() < 1e-4, "the row {i} stacks");
+            assert!(
+                (y - CAT_Y - i as f32 * CAT_STEP).abs() < 1e-4,
+                "the row {i} stacks"
+            );
             assert!(x > SIDEBAR_X);
         }
         assert_eq!(done_rect(w, h)[0], (w / 2.0 - 100.0).floor());
-        assert_eq!(details_rect(w, h)[0] + DETAILS_W, main[0] + main[2], "the strip hugs the main area's right");
+        assert_eq!(
+            details_rect(w, h)[0] + DETAILS_W,
+            main[0] + main[2],
+            "the strip hugs the main area's right"
+        );
         assert_eq!(sidebar_rect(h)[3], h - 16.0);
         let _ = SEARCH;
     }
-
 
     fn setting(value: &str) -> impl Fn(&str) -> Option<String> + '_ {
         move |key| (key == SETTING).then(|| value.to_owned())
@@ -698,5 +782,54 @@ mod tests {
         assert_eq!(v.scrolled(-2.0, 24.0, 300.0, 900.0), 40.0);
         v.scroll = 900.0;
         assert_eq!(v.clamp(24.0, 300.0, 500.0), 224.0);
+    }
+
+    /// The mobs: the header's sort orders the grid — the counts descend
+    /// first, the same column flips, the name starts ascending — and the
+    /// search filters it.
+    #[test]
+    fn the_mob_rows_sort_by_the_header() {
+        let entries = vec![
+            ("minecraft:zombie".to_owned(), "Zombie".to_owned()),
+            ("minecraft:creeper".to_owned(), "Creeper".to_owned()),
+            ("minecraft:spider".to_owned(), "Spider".to_owned()),
+        ];
+        let value = |s: MobSort, id: &str| match (s, id) {
+            (MobSort::Kills, "minecraft:zombie") => 5,
+            (MobSort::Kills, "minecraft:creeper") => 12,
+            (MobSort::KilledBy, "minecraft:spider") => 3,
+            _ => 0,
+        };
+        let mut v = View::new();
+        assert_eq!(
+            v.mob_rows(entries.clone(), value)[0].0,
+            "minecraft:creeper",
+            "the default is kills, biggest first"
+        );
+        v.mob_sort_clicked(MobSort::Kills);
+        assert!(v.mob_asc, "the same column flips to ascending");
+        assert_eq!(v.mob_rows(entries.clone(), value)[0].0, "minecraft:spider");
+        v.mob_sort_clicked(MobSort::Name);
+        assert!(v.mob_asc, "a new name sort starts ascending");
+        assert_eq!(v.mob_rows(entries.clone(), value)[0].0, "minecraft:creeper");
+        v.mob_sort_clicked(MobSort::KilledBy);
+        assert!(!v.mob_asc, "a new count sort starts descending");
+        assert_eq!(v.mob_rows(entries, value)[0].0, "minecraft:spider");
+    }
+
+    #[test]
+    fn the_mob_search_filters_and_the_slots_answer() {
+        let mut v = View::new();
+        v.drawn_mobs = vec!["minecraft:zombie".to_owned()];
+        assert_eq!(v.drawn_mob_at(0), Some("minecraft:zombie"));
+        assert_eq!(v.drawn_mob_at(1), None);
+        v.search = " creeper".to_owned();
+        let entries = vec![
+            ("minecraft:zombie".to_owned(), "Zombie".to_owned()),
+            ("minecraft:creeper".to_owned(), "Creeper".to_owned()),
+        ];
+        let got = v.mob_rows(entries, |_, _| 0);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].0, "minecraft:creeper");
     }
 }

@@ -144,7 +144,8 @@ pub fn preview(game: &mut crate::game::Game<'_>) {
         // The flight's shadow: every few steps, the ground under the flight
         // (a straight cast down; open sky adds nothing). Aiming dead-ahead
         // the arc lies on the view axis and reads as a line on screen —
-        // this track is what shows the path then.
+        // the HUD panel's side profile (the runtime's projection) is what
+        // shows the drop there, this track anchors it in the terrain.
         if step % GROUND_EVERY == 0 {
             if let Some(hit) = game
                 .clip_ray([p.position.x, p.position.y, p.position.z], [0.0, -1.0, 0.0], 48.0)
@@ -163,5 +164,9 @@ pub fn preview(game: &mut crate::game::Game<'_>) {
             break;
         }
     }
-    state::publish(state::Preview { points, ground, impact });
+    state::publish(state::Preview {
+        points,
+        ground,
+        impact,
+    });
 }
