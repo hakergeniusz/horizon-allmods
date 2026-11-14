@@ -15,7 +15,6 @@ fn elytra_slot_page_click(game: &mut crate::game::Game<'_>, mod_id: &str, button
         )
     };
     if let Some(on) = clicked {
-        let (key, value) = elytra::stored_enabled(on);
-        game.native_set_setting(elytra::ID, key, &value);
+        game.native_set_setting(elytra::ID, elytra::SETTING_ENABLED, if on { "true" } else { "false" });
     }
 }

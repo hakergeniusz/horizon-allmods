@@ -22,12 +22,13 @@
 /// the owner of the mod's own screen (the wiki's viewer).
 pub const ID: &str = "hey_wiki";
 /// The version the row shows.
-pub const VERSION: &str = "0.1.0";
+pub const VERSION: &str = "0.2.0";
 /// The mod's description for its row.
 pub const DESCRIPTION: &str = "The Minecraft Wiki, a keypress away: press H to open the \
 page of the block, mob or item your crosshair is on (the hovered slot's item \
 while a screen is open), Alt+H for the item in your hand, and B for an \
-in-game wiki search. Pages show in the game; a browser is the fallback.";
+in-game wiki search. Pages render like the wiki's own article — sections, \
+headers and rules on a paper panel; a browser is the fallback.";
 
 /// The wiki the mod opens: the official English Minecraft Wiki, a MediaWiki
 /// site with the TextExtracts extension the page fetch reads.
@@ -358,6 +359,76 @@ pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
+// ===== The page as the wiki lays it out =====
+
+/// One drawn line of a page, with the wiki look it draws as: the extract's
+/// own `== Section ==` markers become the wiki's headers, the rest is body.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PageLine {
+    pub text: String,
+    pub kind: LineKind,
+}
+
+/// How a page's line reads: a `== Section ==` header (the wiki draws a rule
+/// under those), a deeper `=== Sub ===` header, or body text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LineKind {
+    Heading,
+    Subheading,
+    Body,
+}
+
+/// The wiki header a line names: `== Section ==` is level 2 (the page title
+/// is 1 and never appears in an extract's body), `=== Sub ===` is 3 and
+/// deeper, with the same number of `=` closing as opening. Not a header: none.
+pub fn heading_of(line: &str) -> Option<(usize, &str)> {
+    let level = line.chars().take_while(|&c| c == '=').count();
+    if level < 2 {
+        return None;
+    }
+    let closing = line.chars().rev().take_while(|&c| c == '=').count();
+    if closing != level || line.len() < level * 2 {
+        return None;
+    }
+    let inner = line[level..line.len() - level].trim();
+    (!inner.is_empty()).then_some((level, inner))
+}
+
+/// What a page's text becomes for the view: the wiki's layout — each
+/// `== Section ==` (and deeper) its own header lines, everything else body —
+/// word-wrapped at `width` characters. Blank lines carry no drawing of their
+/// own; the kinds space the page.
+pub fn wrap_page(text: &str, width: usize) -> Vec<PageLine> {
+    let mut out = Vec::new();
+    for paragraph in text.split('\n') {
+        let trimmed = paragraph.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match heading_of(trimmed) {
+            Some((level, title)) => {
+                let kind = if level >= 3 {
+                    LineKind::Subheading
+                } else {
+                    LineKind::Heading
+                };
+                for line in wrap_text(title, width) {
+                    out.push(PageLine { text: line, kind });
+                }
+            }
+            None => {
+                for line in wrap_text(trimmed, width) {
+                    out.push(PageLine {
+                        text: line,
+                        kind: LineKind::Body,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
 // ===== The crosshair target =====
 
 /// Which crosshair target an H press opens: the mob only when its hit is
@@ -550,8 +621,9 @@ pub enum Mode {
         title: String,
         /// The browser URL the buttons open and copy.
         url: String,
-        /// The wrapped body, one screen line a piece.
-        lines: Vec<String>,
+        /// The wrapped body, one screen line a piece, each with the wiki
+        /// look it draws as ([`LineKind`]).
+        lines: Vec<PageLine>,
         scroll: usize,
         /// Why the text is not what the page said (a fetch failure), if so.
         failed: bool,
@@ -618,7 +690,7 @@ impl Viewer {
                 self.mode = Mode::Page {
                     url: page_url(&extract.title).unwrap_or_default(),
                     title: extract.title,
-                    lines: wrap_text(&extract.body, WRAP_WIDTH),
+                    lines: wrap_page(&extract.body, WRAP_WIDTH),
                     scroll: 0,
                     failed: false,
                 };
@@ -634,7 +706,7 @@ impl Viewer {
                     self.mode = Mode::Page {
                         url: page_url(&name).unwrap_or_default(),
                         title: name,
-                        lines: wrap_text(
+                        lines: wrap_page(
                             "The wiki has no page to show here, or it could not be \
                              fetched. The buttons below still open it or copy its \
                              address.",
@@ -1177,10 +1249,48 @@ pub fn reset_screen() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::{heading_of, wrap_page, LineKind, PageLine};
 
     const OFF: Option<String> = None;
     fn setting(value: &str) -> impl Fn(&str) -> Option<String> + '_ {
         move |_| Some(value.to_string())
+    }
+
+    /// The wiki's own markers become the page's kinds: `== X ==` headers,
+    /// `=== X ===` subheaders, everything else body, blanks dropped (the
+    /// kinds space the page), and header text wraps as its kind.
+    #[test]
+    fn the_page_wraps_as_the_wiki_lays_it_out() {
+        assert_eq!(heading_of("== Gameplay =="), Some((2, "Gameplay")));
+        assert_eq!(heading_of("=== A == B ==="), Some((3, "A == B")));
+        assert_eq!(heading_of("== ==="), None, "the marks alone are no header");
+        assert_eq!(heading_of("plain text"), None);
+        assert_eq!(heading_of("="), None);
+        let page = wrap_page(
+            "Lead line.\n\n== First ==\nBody one two.\n=== Sub ===\nDeeper.\n",
+            62,
+        );
+        let kinds: Vec<LineKind> = page.iter().map(|l| l.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                LineKind::Body,
+                LineKind::Heading,
+                LineKind::Body,
+                LineKind::Subheading,
+                LineKind::Body
+            ]
+        );
+        assert_eq!(page[0].text, "Lead line.");
+        assert_eq!(page[1].text, "First");
+        assert_eq!(page[3].text, "Sub");
+        // A header longer than the line wraps as a header, never body.
+        let long = wrap_page("== A Very Long Section Title That Wraps Around Well ==\n", 20);
+        assert!(long.iter().all(|l| l.kind == LineKind::Heading));
+        assert!(long.len() > 1);
+        let empty = wrap_page("\n\n\n", 62);
+        assert!(empty.is_empty());
+        let _ = PageLine { text: String::new(), kind: LineKind::Body };
     }
 
     #[test]
@@ -1584,7 +1694,7 @@ mod tests {
         assert_eq!(title, "Wither Skeleton");
         assert_eq!(
             lines,
-            &wrap_text(
+            &wrap_page(
                 "The wither skeleton is a tall mob.\n\nIt carries a stone sword.",
                 WRAP_WIDTH
             )

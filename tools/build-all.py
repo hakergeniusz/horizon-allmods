@@ -54,7 +54,7 @@ BUNDLES = [
     ("baritone", ROOT / "vendor/baritone-1.1.52.hnmod", "d46c541d1e673a95f343960b6fb1646a0669ec07df11958af97f1a76b3b14ffa"),
     ("freecam", HOME / "Projects/freecam/target/freecam-0.2.0.hnmod", None),
     ("pingfix", HOME / "Projects/pingfix/target/pingfix-0.1.0.hnmod", None),
-    ("statview", HOME / "Projects/statview/target/statview-1.0.3.hnmod", None),
+    ("statview", HOME / "Projects/statview/target/statview-1.1.0.hnmod", None),
     ("portal_interact", HOME / "Projects/portal_interact/target/portal_interact-0.1.0.hnmod", None),
     ("iron_stomach", HOME / "Projects/iron_stomach/target/iron_stomach-1.1.0.hnmod", None),
     ("soft_landing", HOME / "Projects/soft_landing/target/soft_landing-1.0.0.hnmod", None),
@@ -62,11 +62,15 @@ BUNDLES = [
     ("baritone_helper", HOME / "Projects/baritone-helper/target/baritone_helper-0.1.0.hnmod", None),
     ("fly", HOME / "Projects/fly/target/fly-0.1.0.hnmod", None),
     ("no_chat_reports", HOME / "Projects/no_chat_reports/target/no_chat_reports-0.1.0.hnmod", None),
-    ("trajectory_preview", HOME / "Projects/trajectory_preview/target/trajectory_preview-0.1.0.hnmod", None),
-    ("barrel_roll", HOME / "Projects/barrel_roll/target/barrel_roll-0.1.0.hnmod", None),
-    ("elytra_slot", HOME / "Projects/elytra_slot/target/elytra_slot-0.1.0.hnmod", None),
-    ("hey_wiki", HOME / "Projects/hey_wiki/target/hey_wiki-0.1.0.hnmod", None),
-    ("bundle_inventory", HOME / "Projects/bundle_inventory/target/bundle_inventory-0.1.0.hnmod", None),
+    ("trajectory_preview", HOME / "Projects/trajectory_preview/target/trajectory_preview-0.2.0.hnmod", None),
+    ("elytra_slot", HOME / "Projects/elytra_slot/target/elytra_slot-0.2.0.hnmod", None),
+    ("hey_wiki", HOME / "Projects/hey_wiki/target/hey_wiki-0.2.0.hnmod", None),
+    # barrel_roll dropped 2026-11-14: gyro (CGRLabs, MIT) already does the
+    # Do-a-Barrel-Roll port on the registry; bundle_inventory dropped: the
+    # registry's shulkerboxtooltip shows bundle contents in tooltips. Both
+    # registry mods are vendor-pinned by sha256 (unsigned upstream).
+    ("mod_menu", ROOT / "vendor/mod_menu-0.3.5.hnmod", "5fef518e6ce7417944ab2621711be013cf7e25fdd6d3b25922876e78f090bfa3"),
+    ("shulkerboxtooltip", ROOT / "vendor/shulkerboxtooltip-1.0.1.hnmod", "005244f696d9c5214980f554251f6442523768f040a78f505ef8d36090484bba"),
 ]
 
 # Nothing is excluded now: worldedit's manifest is migrated below. The helpers

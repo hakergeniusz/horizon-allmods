@@ -1,29 +1,49 @@
 [mod]
 id = "elytra_slot"
-version = "0.1.0"
+version = "0.2.0"
 priority = 100
 
 # The commit it was tested on: it draws into the survival inventory, answers
-# its clicks through the game's own menu engine and reads the armor the
-# flight checks read, so a Horizon change in the game or mod-hook sources
-# needs a re-check.
+# its clicks as its own bay state, reads the files the flight check answers
+# through and hooks the glide check itself, so a Horizon change in the game
+# or mod-hook sources needs a re-check.
 [compatibility]
 horizon_revision = "2ebf00a0281c592f79191e76fce0e7d522c6f425"
 
 # The mod's brain: pure standard library, no game types, tested on its own.
-# The slot geometry, the click plans and the keep-state decisions all live
-# here; the helpers below are thin adapters over them.
+# The slot geometry, the bay's text state (files and live copy) and the click
+# decisions all live here; the helpers below are thin adapters over them.
 [[module]]
 id = "runtime"
 file = "crates/horizon-client/src/game.rs"
 name = "elytra_slot"
 source = "runtime.rs"
 
-# A click on the survival inventory that lands on the mod's elytra slot: the
-# whole equip or unequip runs here as real menu clicks through the game's own
-# verified menu engine (predicted, and sent to a server), and the vanilla
-# click is skipped. Every press over no engine slot reaches this hook on the
-# window and a server alike, so the drawn slot answers like a real one.
+# The game-side half: the bay's text state as the game's own ItemStack, and
+# back — the only fns that touch the game's item types.
+[[module]]
+id = "bay"
+file = "crates/horizon-client/src/game.rs"
+name = "elytra_slot_bay"
+source = "bay.rs"
+
+# The glide check, before the game's own answer: the bay counts as worn
+# elytra (single player and LAN), so the chestplate stays worn beside it.
+[[injection]]
+id = "glider"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::Game<'_>::glider_worn"
+helper = "glider.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+]
+
+# A click on the survival inventory that lands on the mod's slot: the elytra
+# moves between the cursor and the bay as direct state (single player and
+# LAN), the bay's own stack swaps out to the cursor, and the vanilla click is
+# skipped. Every press over no engine slot reaches this hook, so the drawn
+# slot answers like a real one.
 [[injection]]
 id = "click"
 kind = "HEAD"

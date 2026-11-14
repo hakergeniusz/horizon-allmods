@@ -131,9 +131,11 @@ fn hey_wiki_screen(
                 false,
             );
         }
-        // The page: the title, the wrapped text one line a piece (the
-        // scroll's window), a scrollbar at the right, and the browser's
-        // three buttons, with the rects the click helper answers.
+        // The page: the wiki's own article look — a paper panel under the
+        // title, black text on it, the section headers with the wiki's rule
+        // under them, the subheaders indented — with the scrollbar and the
+        // browser's three buttons below, with the rects the click helper
+        // answers.
         wiki::Mode::Page {
             title,
             lines,
@@ -148,34 +150,45 @@ fn hey_wiki_screen(
                 if failed { 0xFF5555 } else { 0xFFFF55 },
                 false,
             );
-            for (row, line) in lines.iter().skip(scroll).take(wiki::BODY_LINES).enumerate() {
-                if line.is_empty() {
-                    continue;
+            // The paper: the article's own surface, the way the wiki draws
+            // it (its white, its hairline top border).
+            let paper = [px + 6.0, py + 24.0, pw - 12.0, ph - 64.0];
+            let [qx, qy, qw, qh] = paper;
+            game.native_fill(batch, paper, 0xFFF8F9FA);
+            game.native_fill(batch, [qx, qy, qw, 1.0], 0xFFA2A9B1);
+            let show = ((qh - 8.0) / wiki::LINE_HEIGHT).floor().max(1.0) as usize;
+            let view = show.max(wiki::BODY_LINES);
+            for (row, line) in lines.iter().skip(scroll).take(view).enumerate() {
+                let y = qy + 4.0 + row as f32 * wiki::LINE_HEIGHT;
+                match line.kind {
+                    wiki::LineKind::Heading => {
+                        game.native_text(batch, &line.text, [qx + 8.0, y], 0xFF202122, true);
+                        game.native_fill(batch, [qx + 8.0, y + 9.0, qw - 16.0, 1.0], 0xFFA2A9B1);
+                    }
+                    wiki::LineKind::Subheading => {
+                        game.native_text(batch, &line.text, [qx + 12.0, y], 0xFF202122, true);
+                    }
+                    wiki::LineKind::Body => {
+                        game.native_text(batch, &line.text, [qx + 8.0, y], 0xFF202122, false);
+                    }
                 }
-                game.native_text(
-                    batch,
-                    line,
-                    [px + 10.0, py + 30.0 + row as f32 * wiki::LINE_HEIGHT],
-                    0xFFFFFF,
-                    true,
-                );
             }
-            // The scrollbar: a thin bar down the panel's right, its thumb
+            // The scrollbar: a thin bar down the paper's right, its thumb
             // where the scroll is, when the text runs past the view.
             let max = wiki::max_scroll(lines.len(), wiki::BODY_LINES);
             if max > 0 {
-                let bar_h = ph - 96.0;
+                let bar_h = qh - 8.0;
                 let thumb = (bar_h / max as f32).max(8.0).min(bar_h);
                 let at = (bar_h - thumb) * scroll as f32 / max as f32;
-                game.native_fill(batch, [px + pw - 5.0, py + 34.0, 3.0, bar_h], 0x30FFFFFF);
+                game.native_fill(batch, [qx + qw - 6.0, qy + 4.0, 3.0, bar_h], 0x30202122);
                 game.native_fill(
                     batch,
-                    [px + pw - 5.0, py + 34.0 + at, 3.0, thumb],
-                    0xA0FFFFFF,
+                    [qx + qw - 6.0, qy + 4.0 + at, 3.0, thumb],
+                    0xA0202122,
                 );
             }
             for (plan, rect) in wiki::button_rects(panel) {
-                game.native_fill(batch, rect, 0xFF333333);
+                game.native_fill(batch, rect, 0xFF3366CC);
                 game.native_text(
                     batch,
                     wiki::button_label(plan),

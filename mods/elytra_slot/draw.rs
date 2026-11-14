@@ -1,10 +1,9 @@
 // The elytra slot, drawn over the plain survival inventory once a frame
 // (`native_screen_render_post`, after the screen, its tooltips and the
-// carried stack): the slot frame right of the player model, the worn elytra
-// in it — or the dimmed ghost when the slot is empty, the way the armor
+// carried stack): the slot frame right of the player model, the bay's elytra
+// in it — or the dimmed ghost when the bay is empty, the way the armor
 // ghosts draw — the vanilla hover highlight, and the tooltip naming the
-// elytra and the chestpiece the mod keeps. Read-only: the click answers in
-// its own helper.
+// elytra and the bay's rules. Read-only: the click answers in its own helper.
 // Copyright (c) 2026 hakergeniusz. MIT.
 fn elytra_slot_draw(
     game: &crate::game::Game<'_>,
@@ -12,7 +11,8 @@ fn elytra_slot_draw(
     screen: &horizon_client::mod_api::NativeScreenView<'_>,
 ) {
     use crate::game::elytra_slot as elytra;
-    use horizon_client::{items::ItemStack, ui};
+    use crate::game::elytra_slot_bay as bay;
+    use horizon_client::items::ItemStack;
     if screen.id != "inventory" || screen.menu.is_some() {
         return;
     }
@@ -36,19 +36,16 @@ fn elytra_slot_draw(
     }
     let origin = game.inventory_origin(batch);
     let (x, y) = (origin.0 + elytra::SLOT_X, origin.1 + elytra::SLOT_Y);
-    let hovered = ui::hovered(game.cursor, x, y, elytra::SLOT_SIZE, elytra::SLOT_SIZE);
+    let hovered = horizon_client::ui::hovered(game.cursor, x, y, elytra::SLOT_SIZE, elytra::SLOT_SIZE);
     let atlas = &game.gui.atlas;
     batch.sprite(atlas, "gui/sprites/container/slot", x, y);
     // While the cursor carries a stack over the slot, the carried stack is
     // already drawn there: the slot's own content stays hidden under it.
     let show_content = !(hovered && game.carried.is_some());
-    let worn = game.armor[1].as_ref();
-    let worn_elytra = worn.is_some_and(|s| &*s.item == elytra::ELYTRA);
+    let held = elytra::held();
     if show_content {
-        if worn_elytra {
-            if let Some(stack) = worn {
-                game.draw_item(batch, stack, x, y);
-            }
+        if let Some(stack) = held.as_ref().map(bay::from_text) {
+            game.draw_item(batch, &stack, x, y);
         } else {
             let ghost = ItemStack::new(elytra::ELYTRA, 1);
             game.draw_item(batch, &ghost, x, y);
@@ -68,21 +65,17 @@ fn elytra_slot_draw(
         );
         if game.carried.is_none() {
             let mut lines: Vec<(String, u32)> = Vec::new();
-            match worn.filter(|_| worn_elytra) {
+            match held.as_ref().map(bay::from_text) {
                 Some(stack) => {
                     let names = |item: &str| game.pack.names.display_item(item);
-                    lines.push((horizon_client::stations::hover_name(&names, stack), u32::MAX));
+                    lines.push((horizon_client::stations::hover_name(&names, &stack), u32::MAX));
                 }
                 None => lines.push(("Elytra Slot".to_owned(), u32::MAX)),
             }
-            if let Some(slot) = elytra::stored_of(|k| game.native_setting(elytra::ID, k))
-                && let Some(Some(stack)) = game.inventory.get(slot)
-            {
-                let names = |item: &str| game.pack.names.display_item(item);
-                lines.push((
-                    format!("Kept: {}", horizon_client::stations::hover_name(&names, stack)),
-                    0xFFA0_A0A0,
-                ));
+            if game.remote.is_some() {
+                lines.push(("Glides in single player and LAN".to_owned(), 0xFFA0_A0A0));
+            } else {
+                lines.push(("Your chestplate stays worn beside it".to_owned(), 0xFFA0_A0A0));
             }
             game.draw_tooltip_lines(batch, &lines, game.cursor.0, game.cursor.1);
         }

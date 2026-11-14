@@ -7,6 +7,20 @@
 // Copyright (c) 2026 hakergeniusz. MIT.
 fn hey_wiki_tick(game: &mut crate::game::Game<'_>) {
     use crate::game::hey_wiki as wiki;
+    // The mouse back where playing keeps it: focus loss releases the grab,
+    // and the refocus re-grab can fail while the window manager settles
+    // (a browser round-trip on Linux), after which the engine's own
+    // reassert never fires — it only re-applies a grab it believes it
+    // holds. While the world is live, the window focused and no screen
+    // owns the pointer, playing means captured. Keyboard-mouse mode keeps
+    // its free cursor: that mode wants it.
+    if game.screen == crate::game::Screen::Playing
+        && game.focused
+        && !game.captured
+        && !game.keyboard_mouse
+    {
+        game.capture(true);
+    }
     if let Some(url) = wiki::take_copy() {
         use horizon_client::clipboard::Clipboard;
         game.clipboard.set(&url);
