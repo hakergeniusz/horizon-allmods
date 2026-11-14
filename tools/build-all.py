@@ -63,7 +63,7 @@ BUNDLES = [
     ("fly", HOME / "Projects/fly/target/fly-0.1.0.hnmod", None),
     ("no_chat_reports", HOME / "Projects/no_chat_reports/target/no_chat_reports-0.1.0.hnmod", None),
     ("trajectory_preview", HOME / "Projects/trajectory_preview/target/trajectory_preview-0.2.0.hnmod", None),
-    ("elytra_slot", HOME / "Projects/elytra_slot/target/elytra_slot-0.2.0.hnmod", None),
+    ("elytra_slot", HOME / "Projects/elytra_slot/target/elytra_slot-0.3.0.hnmod", None),
     ("hey_wiki", HOME / "Projects/hey_wiki/target/hey_wiki-0.2.0.hnmod", None),
     # barrel_roll dropped 2026-11-14: gyro (CGRLabs, MIT) already does the
     # Do-a-Barrel-Roll port on the registry; bundle_inventory dropped: the
